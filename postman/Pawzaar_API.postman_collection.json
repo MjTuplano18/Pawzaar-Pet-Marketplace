@@ -1,0 +1,236 @@
+{
+  "info": {
+    "_postman_id": "pawzaar-api-step5",
+    "name": "Pawzaar API",
+    "description": "Step 5 test suite for the Pawzaar pet marketplace.\n\nRun order matters: execute 'Get pets (list)' FIRST — it stores the first pet's id into the collection variable {{pet_id}}, which the detail request then uses.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "pet_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 Health",
+      "description": "Liveness check — the only route that has always been public.",
+      "item": [
+        {
+          "name": "GET health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Body says ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/health",
+            "description": "Should return {\"status\":\"ok\"} with no authentication."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 Pets (public GET)",
+      "description": "The Step 5 endpoints — must be reachable WITHOUT logging in.",
+      "item": [
+        {
+          "name": "GET pets (list)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 (public!)', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Returns a Spring Page with content', () => pm.expect(body.content).to.be.an('array'));",
+                  "pm.test('Page size capped at 50 even if size=500', () => pm.expect(body.content.length).to.be.at.most(50));",
+                  "// Remember the first pet's id so the detail request can use it:",
+                  "if (body.content.length > 0) {",
+                  "    pm.collectionVariables.set('pet_id', body.content[0].id);",
+                  "    pm.test('Saved pet_id = ' + body.content[0].id, () => pm.expect(body.content[0].id).to.be.a('string'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/pets?size=500",
+            "description": "Deliberately asks for size=500 to PROVE the server caps it at 50. Also auto-saves the first pet id into {{pet_id}}."
+          }
+        },
+        {
+          "name": "GET pets (list, defaults)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Default page returns the 3 seed pets', () => {",
+                  "    const n = pm.response.json().content.length;",
+                  "    pm.expect(n).to.be.at.least(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/pets",
+            "description": "No query params: server defaults apply (page=0, size=20, sort=createdAt desc)."
+          }
+        },
+        {
+          "name": "GET pet by id (detail)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Detail has description (not in the summary)', () => pm.expect(b).to.have.property('description'));",
+                  "pm.test('Detail has sellerId', () => pm.expect(b).to.have.property('sellerId'));",
+                  "pm.test('id matches {{pet_id}}', () => pm.expect(b.id).to.eql(pm.collectionVariables.get('pet_id')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/pets/{{pet_id}}",
+            "description": "Run 'GET pets (list)' first — it fills {{pet_id}}. Uses a REAL id from the database."
+          }
+        },
+        {
+          "name": "GET pet — not found (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('Content-Type is application/problem+json', () => pm.response.to.have.header('Content-Type', /problem\\+json/));",
+                  "const b = pm.response.json();",
+                  "pm.test('RFC 9457: title', () => pm.expect(b.title).to.eql('Pet not found'));",
+                  "pm.test('RFC 9457: status', () => pm.expect(b.status).to.eql(404));",
+                  "pm.test('RFC 9457: detail mentions the id', () => pm.expect(b.detail).to.include('00000000-0000-0000-0000-000000000000'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/pets/00000000-0000-0000-0000-000000000000",
+            "description": "A syntactically valid but nonexistent UUID → PetNotFoundException → your GlobalExceptionHandler."
+          }
+        },
+        {
+          "name": "GET pet — malformed id (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 (Spring default, no handler written yet)', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/pets/not-a-uuid",
+            "description": "String that cannot convert to UUID → Spring's built-in 400. (A prettier 400 body would need another @ExceptionHandler — not part of Step 5.)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 Security (must stay locked)",
+      "description": "Negative tests — these prove your SecurityConfig still works.",
+      "item": [
+        {
+          "name": "GET unknown route → 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403 Forbidden', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/users",
+            "description": "Not whitelisted and we have no auth yet -> denied with 403 (it becomes a JSON 401 once Step 6 adds a real login)."
+          }
+        },
+        {
+          "name": "POST pets → 403 (GET-only whitelist)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403 (only GET is public)', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Should not be possible yet\",\n  \"species\": \"DOG\",\n  \"price\": 1000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/pets",
+            "description": "Proves HttpMethod.GET matters: POST /pets is NOT whitelisted even though GET /pets is. (Once Step 6 adds real auth, this is where a Bearer token would go.)"
+          }
+        }
+      ]
+    }
+  ]
+}

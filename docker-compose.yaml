@@ -1,0 +1,18 @@
+# Local PostgreSQL 17 for development.
+# Host port 5433 -> container port 5432 (5432 is usually taken by a local Postgres install).
+# Credentials here must match spring.datasource.* in src/main/resources/application.yaml.
+services:
+  db:
+    image: postgres:17
+    container_name: pawzaar-db
+    environment:
+      POSTGRES_DB: "pawzaar"
+      POSTGRES_USER: "pawzaar"
+      POSTGRES_PASSWORD: "pawzaar_dev"
+    ports:
+      - "5433:5432"
+    volumes:
+      - pawzaar-data:/var/lib/postgresql/data
+
+volumes:
+  pawzaar-data:

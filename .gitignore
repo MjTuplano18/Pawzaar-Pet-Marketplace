@@ -1,0 +1,17 @@
+# Maven build output - regenerable, never commit (if `mvn clean` deletes it, git must not see it)
+target/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+out/
+
+# VS Code
+.vscode/
+
+# OS noise
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
