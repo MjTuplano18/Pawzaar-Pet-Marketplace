@@ -231,6 +231,166 @@
           }
         }
       ]
+    },
+    {
+      "name": "04 Auth (Step 6.2 - register)",
+      "description": "Registration tests. Postman sends real JSON, so there is no PowerShell quote-mangling. Run the happy path FIRST, then the two failure cases.",
+      "item": [
+        {
+          "name": "POST register (201)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('Location header points at the new user', () => pm.expect(pm.response.headers.get('Location')).to.include('/api/v1/users/'));",
+                  "pm.test('Response has NO password field', () => pm.expect(pm.response.json()).to.not.have.property('password'));",
+                  "pm.test('Response has NO bcrypt hash', () => pm.expect(pm.response.text()).to.not.include('$2a$'));",
+                  "pm.test('New account starts as USER / unverified', () => {",
+                  "    const b = pm.response.json();",
+                  "    pm.expect(b.role).to.eql('USER');",
+                  "    pm.expect(b.verified).to.eql(false);",
+                  "    pm.collectionVariables.set('user_id', b.id);",
+                  "    pm.collectionVariables.set('user_email', b.email);",
+                  "});",
+                  "console.log('saved {{user_id}} =', pm.collectionVariables.get('user_id'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ana@email.com\",\n  \"password\": \"pawzaar123\",\n  \"displayName\": \"Ana Reyes\",\n  \"phone\": \"+639171234567\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/auth/register",
+            "description": "Creates a user. Change the email each run (a duplicate returns 409) or delete the row with: docker exec pawzaar-db psql -U pawzaar -d pawzaar -c \"DELETE FROM users WHERE email='ana@email.com';\""
+          }
+        },
+        {
+          "name": "POST register again → 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));",
+                  "const b = pm.response.json();",
+                  "pm.test('RFC 9457 title', () => pm.expect(b.title).to.eql('Email already registered'));",
+                  "pm.test('ProblemDetail content type', () => pm.response.to.have.header('Content-Type', /problem\\+json/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ana@email.com\",\n  \"password\": \"pawzaar123\",\n  \"displayName\": \"Ana Reyes\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/auth/register",
+            "description": "Same email as the request above → EmailAlreadyRegisteredException → 409 via GlobalExceptionHandler."
+          }
+        },
+        {
+          "name": "POST register invalid → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));",
+                  "const b = pm.response.json();",
+                  "pm.test('RFC 9457 title', () => pm.expect(b.title).to.eql('Validation failed'));",
+                  "pm.test('errors array lists all 3 bad fields', () => pm.expect(b.errors).to.have.lengthOf(3));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"not-an-email\",\n  \"password\": \"short\",\n  \"displayName\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/auth/register",
+            "description": "@Valid rejects this BEFORE the service runs - no database call happens."
+          }
+        },
+        {
+          "name": "POST register malformed JSON → 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400 (unparseable body, NOT 403)', () => pm.response.to.have.status(400));",
+                  "console.log('This is what PowerShell curl used to send by accident.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{ this is not valid json }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/auth/register",
+            "description": "Reproduces the PowerShell quote-mangling bug from the CLI - and proves the /error permitAll fix: the real 400 is visible instead of a mystery 403."
+          }
+        }
+      ]
     }
   ]
 }

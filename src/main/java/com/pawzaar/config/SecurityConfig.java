@@ -48,8 +48,14 @@ public class SecurityConfig {
         http.authorizeHttpRequests(auth -> auth
                 // Public: liveness check.
                 .requestMatchers("/api/v1/health").permitAll()
+                // MUST be public: when MVC raises an error (400 bad body, 405 wrong method,
+                // 415 bad content-type...) it dispatches to /error. If security blocked that,
+                // the real status would be replaced by a useless 403 with no body.
+                .requestMatchers("/error").permitAll()
                 // Public: BROWSING pets - but only HTTP GET (read-only).
                 .requestMatchers(HttpMethod.GET, "/api/v1/pets", "/api/v1/pets/**").permitAll()
+                // Auth must be PUBLIC: you cannot log in if logging in requires a token.
+                .requestMatchers(HttpMethod.POST, "/api/v1/auth/**").permitAll()
                 // Everything else (any method, any other URL): must be authenticated.
                 .anyRequest().authenticated());
 
