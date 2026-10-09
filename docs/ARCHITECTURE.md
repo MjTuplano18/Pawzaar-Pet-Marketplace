@@ -42,13 +42,14 @@ Currently implemented (through Step 10):
 | **Search & filtering** on `GET /pets` (optional filters + sort allowlist) | ✅ done (Step 10) |
 | Pet detail with a clean 404 (`GET /pets/{id}`) | ✅ done |
 | One consistent error format (RFC 9457) | ✅ done |
-| Automated tests (web slice + DB slice + unit) | ✅ 71 tests |
+| Automated tests (web slice + DB slice + unit) | ✅ 85 tests |
 | User registration with hashed passwords | ✅ done |
 | Login + JWT issuance, token verification on protected routes | ✅ done (Step 6.3) |
 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ done |
 | Seller endpoints that use the token for **authorization** (ownership) | ✅ done (Step 7) |
 | `USER` → `SELLER` promotion on first listing | ✅ done |
 | **Role-based authorization** via `@PreAuthorize` (seller-only writes) | ✅ done (Step 9) |
+| **Auth rate limiting** (per-IP token bucket → `429`) | ✅ done (Step 11) |
 | Strict CORS allowlist | ✅ done |
 | OpenAPI/Swagger UI, profiles, actuator health | ✅ done |
 | GitHub Actions CI, `README`, multi-stage Dockerfile | ✅ done |
@@ -656,6 +657,39 @@ real client refreshes next — and any replay of the old one is rejected. Both e
 refresh token in the body *is* the credential. Tokens are never logged; `TokenResponse.toString()`
 masks them.
 
+### 6.23 Rate limiting — protecting the auth endpoints
+
+The auth endpoints are the only ones an anonymous attacker can call in a loop, so they are the ones
+worth throttling. Pawzaar uses an in-memory **token bucket** per client IP (`common/ratelimit`):
+
+* `InMemoryRateLimiter` — one bucket per key. Each bucket holds up to `capacity` tokens and refills
+  `refillTokens` every `refillPeriod`. A request takes one token; an empty bucket is denied, and we
+  can compute exactly how long until the next token appears.
+* `RateLimitFilter` — a servlet filter that only inspects `POST` on the configured auth paths. When it
+  denies, it **delegates** a `RateLimitExceededException` to Spring MVC's `HandlerExceptionResolver`,
+  so the `429` is rendered by the same `GlobalExceptionHandler` as every other error — there is no
+  second JSON format. It also sets `Retry-After`.
+* `RateLimitConfig` — reads `pawzaar.rate-limit.*`, builds the beans, and registers the filter at
+  order `-110` (just ahead of Spring Security's chain at `-100`) so a flood is cut off early.
+* `RateLimitProperties` — the tunables, all overridable by environment variables.
+
+Two deliberate choices worth defending in an interview:
+
+* **Per-instance, in memory.** Run three replicas and each counts separately. A shared counter
+  (Redis) is the production upgrade; for a single-instance portfolio project, in-memory avoids an
+  external dependency.
+* **`X-Forwarded-For` is off by default.** The header is client-supplied and spoofable, so trusting
+  it blindly lets an attacker mint a new bucket per request. Enable it only behind a proxy that
+  overwrites the header.
+
+The bucket map is keyed by an attacker-influenced value (the IP), so it is bounded: once it exceeds
+`max-keys`, entries idle longer than `bucket-ttl` are evicted.
+
+```text
+POST /auth/login  →  RateLimitFilter.tryConsume(ip)  →  allowed?  → controller
+                                                       →  denied?   → 429 + Retry-After
+```
+
 ---
 
 ## 7. Journey of one request (end to end)
@@ -894,9 +928,12 @@ Controller  →  returns PetResponse (DTO)     ← entities never reach here
 | `PetServiceTest` (plain Mockito) | nothing (no Spring) | ❌ repository is a mock | business rules: `ACTIVE`-only listing, ownership, admin-only status rejected, `USER`→`SELLER` promotion |
 | `AuthServiceTest` (plain Mockito, real BCrypt) | nothing | ❌ repositories are mocks | login rules (correct/wrong/unknown password, legacy hashes, normalization) **and** refresh rotation/revocation + idempotent logout |
 | `AuthControllerTest` (`@WebMvcTest`) | web layer | ❌ (service mocked) | login/refresh/logout are public, token JSON shape, 401 problem details, 400 validation |
+| `InMemoryRateLimiterTest` (plain JUnit, fake clock) | nothing | ❌ | token-bucket behaviour: burst, deny, refill over time, per-key isolation, stale-bucket eviction, config validation |
+| `RateLimitFilterTest` (plain JUnit, mock servlet) | nothing | ❌ | only `POST` on configured paths is limited; a denial routes through the resolver and never reaches the chain |
+| `GlobalExceptionHandlerTest` (plain JUnit) | nothing | ❌ | `RateLimitExceededException` → `429` + `Retry-After` + `problem+json` title |
 | `PawzaarApiApplicationTests` (`@SpringBootTest`) | everything | ✅ | the whole context starts |
 
-Current total: **71 tests**, all green with `mvn test`.
+Current total: **85 tests**, all green with `mvn test`.
 
 ```bash
 .\mvnw.cmd test                                            # all tests
@@ -1084,7 +1121,8 @@ imports.
 | 8.4 | GitHub Actions CI, `README`, multi-stage Dockerfile | ✅ |
 | 9 | Role-based authorization: `@EnableMethodSecurity` + `@PreAuthorize` on writes; `403` kept in `ProblemDetail` | ✅ |
 | 10 | Search & filtering: optional filters (`Specification`), sort allowlist, `V6` indexes, tests/docs/Postman | ✅ |
-| 11 | Next up: rate limiting, image upload | ⏳ |
+| 11 | Rate limiting: token bucket, auth filter, 429 `problem+json`, tests/docs/Postman | ✅ |
+| 12 | Next up: image upload | ⏳ |
 
 ---
 

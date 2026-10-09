@@ -1,0 +1,146 @@
+package com.pawzaar.common.ratelimit;
+
+import java.time.Duration;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
+
+/**
+ * A thread-safe, in-memory <b>token bucket</b> rate limiter: one bucket per key (usually a client
+ * IP address).
+ *
+ * <p>Why a token bucket? It is the standard way to allow a short <i>burst</i> while capping the
+ * long-run rate. Each bucket starts full with {@code capacity} tokens; every request removes one.
+ * Tokens trickle back at {@code refillTokens} per {@code refillPeriod}. A request with no token
+ * left is denied, and we can compute exactly how long until the next one appears.
+ *
+ * <pre>
+ *   capacity = 5, refill = 5 / minute
+ *   5 quick requests  -> allowed (burst)
+ *   6th               -> denied; retryAfter &lt;= 12s
+ *   steady state      -> ~5 requests per minute
+ * </pre>
+ *
+ * <p>Scope and limits (important to be honest about): this is <b>per instance</b>. Run five copies
+ * behind a load balancer and each one counts separately. A shared counter (Redis) is the production
+ * answer; for this single-instance portfolio project, in-memory is a deliberate, documented choice.
+ *
+ * <p>Memory safety: buckets are keyed by client IP, which an attacker controls, so the map could
+ * grow forever. Once it exceeds {@code maxKeys}, entries untouched for {@code bucketTtl} are
+ * evicted. That bounds memory without a background thread.
+ */
+public class InMemoryRateLimiter {
+
+    /** The outcome of one attempt: whether it is allowed, and (if not) how long to wait. */
+    public record Decision(boolean allowed, Duration retryAfter) {
+    }
+
+    private final int capacity;
+    private final int refillTokens;
+    private final Duration refillPeriod;
+    private final Duration bucketTtl;
+    private final int maxKeys;
+    private final LongSupplier nanoClock;
+
+    private final ConcurrentHashMap<String, Bucket> buckets = new ConcurrentHashMap<>();
+
+    public InMemoryRateLimiter(int capacity, int refillTokens, Duration refillPeriod,
+                               Duration bucketTtl, int maxKeys) {
+        this(capacity, refillTokens, refillPeriod, bucketTtl, maxKeys, System::nanoTime);
+    }
+
+    /** Visible for tests, which inject a controllable clock instead of the real one. */
+    InMemoryRateLimiter(int capacity, int refillTokens, Duration refillPeriod,
+                        Duration bucketTtl, int maxKeys, LongSupplier nanoClock) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("capacity must be > 0");
+        }
+        if (refillTokens <= 0) {
+            throw new IllegalArgumentException("refillTokens must be > 0");
+        }
+        if (refillPeriod == null || refillPeriod.isZero() || refillPeriod.isNegative()) {
+            throw new IllegalArgumentException("refillPeriod must be > 0");
+        }
+        if (bucketTtl == null || bucketTtl.isNegative()) {
+            throw new IllegalArgumentException("bucketTtl must not be negative");
+        }
+        if (maxKeys <= 0) {
+            throw new IllegalArgumentException("maxKeys must be > 0");
+        }
+        this.capacity = capacity;
+        this.refillTokens = refillTokens;
+        this.refillPeriod = refillPeriod;
+        this.bucketTtl = bucketTtl;
+        this.maxKeys = maxKeys;
+        this.nanoClock = nanoClock;
+    }
+
+    /**
+     * Consumes one token for {@code key}, creating that key's bucket if it does not exist yet.
+     *
+     * @return whether the request is allowed, plus the time to wait when it is not
+     */
+    public Decision tryConsume(String key) {
+        long now = nanoClock.getAsLong();
+        evictStaleBuckets(now);
+        Bucket bucket = buckets.computeIfAbsent(key, k -> new Bucket(capacity, now));
+        return bucket.tryConsume(now, capacity, refillTokens, refillPeriod.toNanos());
+    }
+
+    /** Number of tracked keys right now; handy for diagnostics and tests. */
+    int trackedKeys() {
+        return buckets.size();
+    }
+
+    /**
+     * Once the map is over its limit, drop keys we have not seen for {@code bucketTtl}.
+     * Called on every request, but the size check keeps it cheap in the common case.
+     */
+    private void evictStaleBuckets(long nowNanos) {
+        if (buckets.size() <= maxKeys) {
+            return;
+        }
+        long ttlNanos = bucketTtl.toNanos();
+        buckets.entrySet().removeIf(entry -> nowNanos - entry.getValue().lastSeenNanos > ttlNanos);
+    }
+
+    /**
+     * One key's token state. Kept private and mutable; all mutation happens while holding the
+     * bucket's monitor, so the arithmetic below never races.
+     */
+    private static final class Bucket {
+
+        private double tokens;
+        private long lastRefillNanos;
+        private long lastSeenNanos;
+
+        Bucket(int capacity, long nowNanos) {
+            this.tokens = capacity;                 // start full: allow the first burst
+            this.lastRefillNanos = nowNanos;
+            this.lastSeenNanos = nowNanos;
+        }
+
+        synchronized Decision tryConsume(long nowNanos, int capacity,
+                                         int refillTokens, long refillPeriodNanos) {
+            lastSeenNanos = nowNanos;
+
+            // Refill proportionally to elapsed time, never exceeding the capacity.
+            long elapsed = nowNanos - lastRefillNanos;
+            if (elapsed > 0) {
+                double added = (double) refillTokens * elapsed / refillPeriodNanos;
+                tokens = Math.min(capacity, tokens + added);
+                lastRefillNanos = nowNanos;
+            }
+
+            if (tokens >= 1.0) {
+                tokens -= 1.0;
+                return new Decision(true, Duration.ZERO);
+            }
+
+            // No token: report how long until one is available, rounding UP so we never
+            // tell the client to retry a hair too early.
+            double tokensPerNano = (double) refillTokens / refillPeriodNanos;
+            long waitNanos = (long) Math.ceil((1.0 - tokens) / tokensPerNano);
+            return new Decision(false, Duration.ofNanos(waitNanos));
+        }
+    }
+}

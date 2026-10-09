@@ -244,6 +244,24 @@
           }
         },
         {
+          "name": "POST login — rate limited after repeated attempts (429)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('401 while tokens remain, 429 once exhausted', () => pm.expect([401, 429]).to.include(pm.response.code));",
+            "if (pm.response.code === 429) {",
+            "  pm.test('Retry-After header present',     () => pm.expect(Number(pm.response.headers.get('Retry-After'))).to.be.at.least(1));",
+            "  pm.test('title = Too many requests',      () => pm.expect(pm.response.json().title).to.eql('Too many requests'));",
+            "  pm.test('body reports retryAfterSeconds', () => pm.expect(pm.response.json().retryAfterSeconds).to.be.at.least(1));",
+            "}"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"seed@pawzaar.test\",\n  \"password\": \"wrong\"\n}", "options": { "raw": { "language": "json" }}},
+            "url": "{{base_url}}/api/v1/auth/login"
+          },
+          "description": "The auth endpoints are rate limited per client IP (token bucket, default 20/min). Run this request 25 times with the Collection Runner: the first 20 answer 401 and the rest answer 429 problem+json with a Retry-After header. A spoofed X-Forwarded-For does NOT bypass it, because pawzaar.rate-limit.trust-forwarded-for is false by default."
+        },
+        {
           "name": "GET protected — 401 no token",
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
             "pm.test('401 (not 403)', () => pm.response.to.have.status(401));",

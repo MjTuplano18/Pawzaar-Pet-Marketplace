@@ -25,6 +25,17 @@ pawzaar:
       # Comma-separated list of browser origins allowed to call this API. NEVER use "*" in
       # production. Override with the CORS_ALLOWED_ORIGINS env var on the host.
       allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  # Brute-force guard for the unauthenticated auth endpoints (register/login/refresh/logout).
+  # A per-client-IP token bucket; see com.pawzaar.common.ratelimit.
+  rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}              # master switch
+    capacity: ${RATE_LIMIT_CAPACITY:20}             # allowed burst per client
+    refill-tokens: ${RATE_LIMIT_REFILL_TOKENS:20}   # tokens returned each period
+    refill-period: ${RATE_LIMIT_REFILL_PERIOD:1m}
+    bucket-ttl: ${RATE_LIMIT_BUCKET_TTL:10m}        # idle buckets may be evicted after this
+    max-keys: ${RATE_LIMIT_MAX_KEYS:10000}          # hard cap on tracked client IPs (memory guard)
+    # Only enable behind a proxy you control: X-Forwarded-For is client-supplied and spoofable.
+    trust-forwarded-for: ${RATE_LIMIT_TRUST_FORWARDED_FOR:false}
 
 # ── Actuator: health probes for the hosting platform / load balancer ──────────
 management:

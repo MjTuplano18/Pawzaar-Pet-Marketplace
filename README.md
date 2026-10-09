@@ -28,8 +28,10 @@ stateless JWT auth with refresh-token rotation, role-based authorization, automa
 - **Authorization** — URL rules plus method-level `@PreAuthorize`: any authenticated user may post a
   listing, but only `SELLER`s may edit or delete, on top of a service-layer ownership check.
 - **One error format** — every error is an RFC 9457 `application/problem+json` response.
+- **Abuse protection** — the auth endpoints are rate limited per client IP (token bucket) and return
+  **429** `problem+json` with a `Retry-After` header; spoofed `X-Forwarded-For` is ignored by default.
 - **Observability & docs** — Actuator health probes (liveness/readiness) and Swagger UI.
-- **Quality gates** — 71 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds and
+- **Quality gates** — 85 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds and
   tests every push; `.\verify-local.ps1` runs the same checks (plus a live smoke test) locally.
 
 ---
@@ -132,6 +134,9 @@ All routes are versioned under `/api/v1`.
 
 \* Authenticated by the refresh token in the request body, not by an access token.
 
+The `auth` endpoints are rate limited per client IP (default 20 requests/minute). Exceeding the limit
+returns **429** `problem+json` with a `Retry-After` header.
+
 List endpoints are paginated (`?page=0&size=20`) and the page size is hard-capped at **50**.
 
 `GET /pets` also accepts optional filters — `species=DOG` (exact), `province=Bulacan` and
@@ -168,8 +173,8 @@ and revoked. See
 
 ```
 src/main/java/com/pawzaar
-├── common/     cross-cutting: one exception handler, paged response, health
-├── config/     SecurityConfig, CorsConfig, JwtConfig, PasswordEncoderConfig
+├── common/     cross-cutting: one exception handler, paged response, health, rate limiting
+├── config/     SecurityConfig, CorsConfig, JwtConfig, RateLimitConfig, PasswordEncoderConfig
 ├── pet/        feature slice: entity, DTOs, repository, service, controller
 └── user/       feature slice: User, RefreshToken, DTOs, repositories, auth service/controller
 ```
@@ -184,7 +189,7 @@ service; controllers return DTO records only.
 
 | Done | Next |
 |---|---|
-| Public browsing, seller CRUD, JWT + refresh tokens, role-based `@PreAuthorize`, search & filtering, CORS, tests, CI, Docker | Rate limiting, image upload |
+| Public browsing, seller CRUD, JWT + refresh tokens, role-based `@PreAuthorize`, search & filtering, auth rate limiting, CORS, tests, CI, Docker | Image upload |
 
 The full plan lives in
 [`Pawzaar — Spring Boot Learning & Build Roadmap.md`](<Pawzaar — Spring Boot Learning & Build Roadmap.md>).

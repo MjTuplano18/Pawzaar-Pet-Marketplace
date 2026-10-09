@@ -1,6 +1,7 @@
 package com.pawzaar.common;
 
 // === our own domain exceptions (thrown by services, caught here) ===
+import com.pawzaar.common.ratelimit.RateLimitExceededException;   // "too many auth requests"  -> 429
 import com.pawzaar.pet.ForbiddenPetAccessException;           // "not your listing"        -> 403
 import com.pawzaar.pet.InvalidPetStatusException;           // "admin-only status"       -> 400
 import com.pawzaar.pet.InvalidSortException;               // "bad sort field/order"    -> 400
@@ -12,8 +13,10 @@ import com.pawzaar.user.InvalidRefreshTokenException;      // "refresh token bad
 // === Spring's HTTP layer ===
 import org.springframework.dao.OptimisticLockingFailureException;  // @Version race        -> 409
 import org.springframework.security.access.AccessDeniedException;  // @PreAuthorize denied -> 403
+import org.springframework.http.HttpHeaders;    // well-known header names (Retry-After)
 import org.springframework.http.HttpStatus;      // enum of HTTP codes: NOT_FOUND, CONFLICT, BAD_REQUEST...
 import org.springframework.http.ProblemDetail;   // Spring's built-in RFC 9457 "problem details" object
+import org.springframework.http.ResponseEntity;  // lets a handler set status + headers + body
 import org.springframework.http.converter.HttpMessageNotReadableException;  // malformed JSON -> 400
 import org.springframework.web.HttpMediaTypeNotSupportedException;          // wrong content-type -> 415
 import org.springframework.web.HttpRequestMethodNotSupportedException;      // wrong verb     -> 405
@@ -165,6 +168,23 @@ public class GlobalExceptionHandler {
                 ex.getMessage());              // "Refresh token is invalid or expired"
         problem.setTitle("Invalid refresh token");
         return problem;
+    }
+
+    // 429 Too Many Requests: the client made too many requests to a rate-limited endpoint (the auth
+    // flow) in the current window. It returns a ResponseEntity rather than a bare ProblemDetail so
+    // we can also send the Retry-After header clients expect. RateLimitFilter routes here so the
+    // 429 keeps the exact same problem+json shape as every other error.
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ProblemDetail> handleRateLimitExceeded(RateLimitExceededException ex) {
+        long seconds = Math.max(1, ex.getRetryAfter().toSeconds());   // never tell a client to wait 0s
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.TOO_MANY_REQUESTS,   // 429
+                "Rate limit exceeded; retry in " + seconds + "s");
+        problem.setTitle("Too many requests");
+        problem.setProperty("retryAfterSeconds", seconds);
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(seconds))
+                .body(problem);
     }
 
     // ── Framework-level errors, routed here so EVERY response keeps the same shape ──────────
