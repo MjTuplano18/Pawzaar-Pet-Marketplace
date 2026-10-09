@@ -98,7 +98,7 @@ class PetControllerTest {
     private PetSummary fakeSummary() {
         return new PetSummary(PET_ID, "Golden Retriever pup", Species.DOG, "Golden Retriever",
                 new BigDecimal("15000.00"), "Meycauayan", "Bulacan", "MALE",
-                PetStatus.ACTIVE, Instant.parse("2026-10-07T06:00:00Z"));
+                PetStatus.ACTIVE, Instant.parse("2026-10-07T06:00:00Z"), null);
     }
 
     private PetResponse fakeResponse() {
@@ -106,7 +106,7 @@ class PetControllerTest {
                 "Golden Retriever", 3, new BigDecimal("15000.00"),
                 "Vaccinated, dewormed, playful.", "Meycauayan", "Bulacan", "MALE",
                 PetStatus.ACTIVE, Instant.parse("2026-10-07T06:00:00Z"),
-                Instant.parse("2026-10-07T06:00:00Z"));
+                Instant.parse("2026-10-07T06:00:00Z"), List.of());
     }
 
     // ── public read endpoints ──────────────────────────────────────────────────

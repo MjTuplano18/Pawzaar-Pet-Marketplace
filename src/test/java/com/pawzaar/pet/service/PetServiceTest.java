@@ -12,6 +12,8 @@ import com.pawzaar.pet.dto.PetFilter;
 import com.pawzaar.pet.dto.PetResponse;
 import com.pawzaar.pet.dto.PetSummary;
 import com.pawzaar.pet.dto.PetUpdateRequest;
+import com.pawzaar.pet.image.PetImage;
+import com.pawzaar.pet.image.PetImageRepository;
 import com.pawzaar.pet.repository.PetRepository;
 import com.pawzaar.user.Role;
 import com.pawzaar.user.User;
@@ -58,12 +60,17 @@ class PetServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private PetImageRepository petImageRepository;
+
     @InjectMocks
     private PetService petService;
 
     private static final UUID OWNER_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static final UUID OTHER_ID = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     private static final UUID PET_ID   = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final UUID IMAGE_A  = UUID.fromString("22222222-2222-2222-2222-222222222222");
+    private static final UUID IMAGE_B  = UUID.fromString("33333333-3333-3333-3333-333333333333");
 
     // ── listPets ───────────────────────────────────────────────────────────────
 
@@ -80,6 +87,36 @@ class PetServiceTest {
         verify(petRepository).findAll(any(Specification.class), eq(pageable));
     }
 
+    @Test
+    void listPetsAttachesTheCoverImageUrlFromASingleBatchQuery() {
+        PageRequest pageable = PageRequest.of(0, 20);
+        PetFilter filter = new PetFilter(null, null, null, null, null, null, null, null);
+        Pet pet = activePet(OWNER_ID);
+        when(petRepository.findAll(any(Specification.class), eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of(pet)));
+        when(petImageRepository.findByPetIdInAndSortOrder(anyList(), eq(0)))
+                .thenReturn(List.of(imageWithId(pet.getId(), IMAGE_A, 0)));
+
+        PagedResponse<PetSummary> result = petService.listPets(filter, pageable);
+
+        assertEquals("/api/v1/pets/" + pet.getId() + "/images/" + IMAGE_A,
+                result.content().get(0).coverImageUrl());
+        // Cover lookup is one query for the whole page, not one per pet.
+        verify(petImageRepository).findByPetIdInAndSortOrder(anyList(), eq(0));
+    }
+
+    @Test
+    void listPetsLeavesCoverNullWhenThereAreNoImages() {
+        PageRequest pageable = PageRequest.of(0, 20);
+        PetFilter filter = new PetFilter(null, null, null, null, null, null, null, null);
+        when(petRepository.findAll(any(Specification.class), eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of(activePet(OWNER_ID))));
+        // Mockito's default for an unstubbed List-returning method is an empty list.
+        PagedResponse<PetSummary> result = petService.listPets(filter, pageable);
+
+        assertNull(result.content().get(0).coverImageUrl());
+    }
+
     // ── getPet ─────────────────────────────────────────────────────────────────
 
     @Test
@@ -91,6 +128,21 @@ class PetServiceTest {
         PetNotFoundException ex = assertThrows(
                 PetNotFoundException.class, () -> petService.getPet(missingId));
         assertEquals(missingId, ex.getPetId());
+    }
+
+    @Test
+    void getPetIncludesItsImagesInSortOrder() {
+        Pet pet = petWithId(OWNER_ID, PET_ID);
+        when(petRepository.findByIdAndStatus(PET_ID, PetStatus.ACTIVE)).thenReturn(Optional.of(pet));
+        when(petImageRepository.findByPetIdOrderBySortOrderAsc(PET_ID))
+                .thenReturn(List.of(imageWithId(PET_ID, IMAGE_A, 0), imageWithId(PET_ID, IMAGE_B, 1)));
+
+        PetResponse response = petService.getPet(PET_ID);
+
+        assertEquals(2, response.images().size());
+        assertEquals(IMAGE_A, response.images().get(0).id());
+        assertEquals(IMAGE_B, response.images().get(1).id());
+        assertEquals("/api/v1/pets/" + PET_ID + "/images/" + IMAGE_A, response.images().get(0).url());
     }
 
     // ── createPet ──────────────────────────────────────────────────────────────
@@ -244,6 +296,13 @@ class PetServiceTest {
 
     private static Pet activePet(UUID sellerId) {
         return petWithId(sellerId, UUID.randomUUID());
+    }
+
+    /** A PetImage with a known id (the DB would assign it; tests need a stable value). */
+    private static PetImage imageWithId(UUID petId, UUID imageId, int sortOrder) {
+        PetImage image = PetImage.create(petId, "key-" + imageId, "image/png", 128, sortOrder);
+        setField(image, "id", imageId);
+        return image;
     }
 
     private static Pet newPet() {

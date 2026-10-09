@@ -8,19 +8,26 @@ import com.pawzaar.pet.PetNotFoundException;
 import com.pawzaar.pet.PetStatus;
 import com.pawzaar.pet.dto.PetCreateRequest;
 import com.pawzaar.pet.dto.PetFilter;
+import com.pawzaar.pet.dto.PetImageResponse;
 import com.pawzaar.pet.dto.PetResponse;
 import com.pawzaar.pet.dto.PetSummary;
 import com.pawzaar.pet.dto.PetUpdateRequest;
+import com.pawzaar.pet.image.PetImage;
+import com.pawzaar.pet.image.PetImageRepository;
 import com.pawzaar.pet.repository.PetRepository;
 import com.pawzaar.pet.repository.PetSpecifications;
 import com.pawzaar.user.Role;
 import com.pawzaar.user.User;
 import com.pawzaar.user.repository.UserRepository;
 
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 
@@ -36,10 +43,14 @@ import java.util.UUID;
 public class PetService {
 
     private final PetRepository petRepository;
+    private final PetImageRepository petImageRepository;
     private final UserRepository userRepository;
 
-    public PetService(PetRepository petRepository, UserRepository userRepository) {
+    public PetService(PetRepository petRepository,
+                      PetImageRepository petImageRepository,
+                      UserRepository userRepository) {
         this.petRepository = petRepository;
+        this.petImageRepository = petImageRepository;
         this.userRepository = userRepository;
     }
 
@@ -48,9 +59,9 @@ public class PetService {
     /** Paginated list of ACTIVE listings matching the optional filters - the public search feed. */
     @Transactional(readOnly = true)
     public PagedResponse<PetSummary> listPets(PetFilter filter, Pageable pageable) {
-        return PagedResponse.of(
-                petRepository.findAll(PetSpecifications.activeMatching(filter), pageable)
-                             .map(PetService::toSummary));
+        Page<Pet> page = petRepository.findAll(PetSpecifications.activeMatching(filter), pageable);
+        Map<UUID, String> covers = coverUrlsFor(page.getContent());
+        return PagedResponse.of(page.map(pet -> toSummary(pet, covers.get(pet.getId()))));
     }
 
     /** Full detail for one ACTIVE listing. Hidden and sold pets are invisible to the public. */
@@ -58,15 +69,15 @@ public class PetService {
     public PetResponse getPet(UUID id) {
         Pet pet = petRepository.findByIdAndStatus(id, PetStatus.ACTIVE)
                 .orElseThrow(() -> new PetNotFoundException(id));
-        return toResponse(pet);
+        return toResponse(pet, petImageRepository.findByPetIdOrderBySortOrderAsc(id));
     }
 
     /** All listings by the authenticated user (any status - it is their own dashboard). */
     @Transactional(readOnly = true)
     public PagedResponse<PetSummary> getMyPets(UUID sellerId, Pageable pageable) {
-        return PagedResponse.of(
-                petRepository.findBySellerId(sellerId, pageable)
-                             .map(PetService::toSummary));
+        Page<Pet> page = petRepository.findBySellerId(sellerId, pageable);
+        Map<UUID, String> covers = coverUrlsFor(page.getContent());
+        return PagedResponse.of(page.map(pet -> toSummary(pet, covers.get(pet.getId()))));
     }
 
     // ── WRITE ────────────────────────────────────────────────────────────────────────────────
@@ -93,7 +104,7 @@ public class PetService {
         // (inside the same transaction as the insert) so the two states can never disagree.
         promoteToSeller(sellerId);
 
-        return toResponse(saved);
+        return toResponse(saved, List.of());
     }
 
     /**
@@ -131,7 +142,8 @@ public class PetService {
 
         // save() is not strictly needed (Hibernate dirty-checks within the transaction),
         // but being explicit makes it obvious that a write is intended.
-        return toResponse(petRepository.save(pet));
+        Pet updated = petRepository.save(pet);
+        return toResponse(updated, petImageRepository.findByPetIdOrderBySortOrderAsc(id));
     }
 
     /**
@@ -179,7 +191,7 @@ public class PetService {
         });
     }
 
-    private static PetSummary toSummary(Pet pet) {
+    private static PetSummary toSummary(Pet pet, String coverImageUrl) {
         return new PetSummary(
                 pet.getId(),
                 pet.getTitle(),
@@ -190,11 +202,12 @@ public class PetService {
                 pet.getProvince(),
                 pet.getSex(),
                 pet.getStatus(),
-                pet.getCreatedAt()
+                pet.getCreatedAt(),
+                coverImageUrl
         );
     }
 
-    private static PetResponse toResponse(Pet pet) {
+    private static PetResponse toResponse(Pet pet, List<PetImage> images) {
         return new PetResponse(
                 pet.getId(),
                 pet.getSellerId(),
@@ -209,7 +222,38 @@ public class PetService {
                 pet.getSex(),
                 pet.getStatus(),
                 pet.getCreatedAt(),
-                pet.getUpdatedAt()
+                pet.getUpdatedAt(),
+                images.stream().map(image -> toImageResponse(pet.getId(), image)).toList()
         );
+    }
+
+    private static PetImageResponse toImageResponse(UUID petId, PetImage image) {
+        return new PetImageResponse(
+                image.getId(),
+                imageUrl(petId, image.getId()),
+                image.getContentType(),
+                image.getSortOrder()
+        );
+    }
+
+    /** The public (relative) URL a client uses to fetch an image's bytes. */
+    static String imageUrl(UUID petId, UUID imageId) {
+        return "/api/v1/pets/" + petId + "/images/" + imageId;
+    }
+
+    /**
+     * Batch-loads the cover (sort order 0) of every pet on the page in ONE query, then maps petId to
+     * its URL. Doing it per pet would be the classic N+1: 21 queries for a 20-item page.
+     */
+    private Map<UUID, String> coverUrlsFor(List<Pet> pets) {
+        List<UUID> petIds = pets.stream().map(Pet::getId).toList();
+        if (petIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, String> urls = new HashMap<>();
+        for (PetImage image : petImageRepository.findByPetIdInAndSortOrder(petIds, 0)) {
+            urls.put(image.getPetId(), imageUrl(image.getPetId(), image.getId()));
+        }
+        return urls;
     }
 }

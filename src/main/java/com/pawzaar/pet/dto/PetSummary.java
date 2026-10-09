@@ -22,5 +22,7 @@ public record PetSummary(
         String province,
         String sex,
         PetStatus status,
-        Instant createdAt
+        Instant createdAt,
+        /** URL of the cover image (sort order 0), or null when the listing has no images yet. */
+        String coverImageUrl
 ) {}

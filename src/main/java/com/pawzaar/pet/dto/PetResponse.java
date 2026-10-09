@@ -5,6 +5,7 @@ import com.pawzaar.pet.Species; // Represents the type/species of the pet.
 
 import java.math.BigDecimal; // Used for accurate monetary values such as pet prices.
 import java.time.Instant; // Represents the pet's creation date and time.
+import java.util.List; // Holds the listing's images.
 import java.util.UUID; // Used for unique identifiers such as pet and seller IDs.
 
 
@@ -32,6 +33,8 @@ public record PetResponse(
         String sex,
         PetStatus status,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        /** All images, ordered: index 0 is the cover. Empty if none uploaded yet. */
+        List<PetImageResponse> images
 
 ) {}
