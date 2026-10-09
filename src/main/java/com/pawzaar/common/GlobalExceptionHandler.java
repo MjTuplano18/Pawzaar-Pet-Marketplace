@@ -6,6 +6,11 @@ import com.pawzaar.pet.ForbiddenPetAccessException;           // "not your listi
 import com.pawzaar.pet.InvalidPetStatusException;           // "admin-only status"       -> 400
 import com.pawzaar.pet.InvalidSortException;               // "bad sort field/order"    -> 400
 import com.pawzaar.pet.PetNotFoundException;               // "no pet with that id"     -> 404
+import com.pawzaar.pet.image.ImageStorageException;        // disk/storage failure      -> 500
+import com.pawzaar.pet.image.ImageTooLargeException;       // image over the size cap   -> 413
+import com.pawzaar.pet.image.InvalidImageException;        // empty/not a real image    -> 400
+import com.pawzaar.pet.image.PetImageNotFoundException;    // "no image with that id"   -> 404
+import com.pawzaar.pet.image.UnsupportedImageTypeException;// bad image type            -> 415
 import com.pawzaar.user.EmailAlreadyRegisteredException;   // "email already taken"     -> 409
 import com.pawzaar.user.InvalidCredentialsException;       // "login failed"            -> 401
 import com.pawzaar.user.InvalidRefreshTokenException;      // "refresh token bad"       -> 401
@@ -24,6 +29,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;  // thrown 
 import org.springframework.web.bind.annotation.ExceptionHandler;     // "this exception -> this method"
 import org.springframework.web.bind.annotation.RestControllerAdvice;  // applies to ALL controllers
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;  // bad UUID -> 400
+import org.springframework.web.multipart.MaxUploadSizeExceededException;  // body over multipart limit -> 413
 
 import java.util.List;  // needed for the errors array we attach to validation problems
 
@@ -185,6 +191,72 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(HttpHeaders.RETRY_AFTER, Long.toString(seconds))
                 .body(problem);
+    }
+
+    // ── Image upload errors ─────────────────────────────────────────────────────────────────
+
+    // 404: the image does not exist, or does not belong to the pet in the path.
+    @ExceptionHandler(PetImageNotFoundException.class)
+    public ProblemDetail handlePetImageNotFound(PetImageNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,          // 404
+                ex.getMessage());
+        problem.setTitle("Image not found");
+        problem.setProperty("imageId", ex.getImageId());
+        return problem;
+    }
+
+    // 415: the uploaded file's type is not on the allowlist.
+    @ExceptionHandler(UnsupportedImageTypeException.class)
+    public ProblemDetail handleUnsupportedImageType(UnsupportedImageTypeException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNSUPPORTED_MEDIA_TYPE, // 415
+                ex.getMessage() + "; allowed types: image/jpeg, image/png, image/webp");
+        problem.setTitle("Unsupported image type");
+        return problem;
+    }
+
+    // 413: the image is larger than the configured cap.
+    @ExceptionHandler(ImageTooLargeException.class)
+    public ProblemDetail handleImageTooLarge(ImageTooLargeException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.PAYLOAD_TOO_LARGE,  // 413
+                ex.getMessage());
+        problem.setTitle("Image too large");
+        problem.setProperty("maxBytes", ex.getMaxBytes());
+        return problem;
+    }
+
+    // 400: empty upload, or bytes that are not a recognisable image.
+    @ExceptionHandler(InvalidImageException.class)
+    public ProblemDetail handleInvalidImage(InvalidImageException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,        // 400
+                ex.getMessage());
+        problem.setTitle("Invalid image");
+        return problem;
+    }
+
+    // 500: the storage layer failed (disk full, permissions...). Log nothing sensitive back to the
+    // client; the message is deliberately generic so infrastructure detail never leaks.
+    @ExceptionHandler(ImageStorageException.class)
+    public ProblemDetail handleImageStorage(ImageStorageException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR,  // 500
+                "The image could not be stored or read right now");
+        problem.setTitle("Image storage error");
+        return problem;
+    }
+
+    // 413: the servlet container rejected an oversized multipart body BEFORE any controller ran.
+    // Without this handler it would skip our problem+json shape entirely.
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ProblemDetail handleMaxUploadSize(MaxUploadSizeExceededException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.PAYLOAD_TOO_LARGE,  // 413
+                "The uploaded file exceeds the maximum allowed size");
+        problem.setTitle("Image too large");
+        return problem;
     }
 
     // ── Framework-level errors, routed here so EVERY response keeps the same shape ──────────

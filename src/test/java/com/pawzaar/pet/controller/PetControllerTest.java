@@ -10,9 +10,14 @@ import com.pawzaar.pet.PetStatus;
 import com.pawzaar.pet.Species;
 import com.pawzaar.pet.dto.PetCreateRequest;
 import com.pawzaar.pet.dto.PetFilter;
+import com.pawzaar.pet.dto.PetImageResponse;
 import com.pawzaar.pet.dto.PetResponse;
 import com.pawzaar.pet.dto.PetSummary;
 import com.pawzaar.pet.dto.PetUpdateRequest;
+import com.pawzaar.pet.image.PetImageNotFoundException;
+import com.pawzaar.pet.image.ServedImage;
+import com.pawzaar.pet.image.UnsupportedImageTypeException;
+import com.pawzaar.pet.service.PetImageService;
 import com.pawzaar.pet.service.PetService;
 import com.pawzaar.common.PagedResponse;
 import org.junit.jupiter.api.Test;
@@ -20,9 +25,11 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -38,6 +45,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -70,10 +78,12 @@ class PetControllerTest {
             .findAndRegisterModules(); // registers JavaTimeModule for Instant serialization
 
     @MockitoBean PetService petService;
+    @MockitoBean PetImageService petImageService;
 
     private static final UUID OWNER_ID  = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static final UUID OTHER_ID  = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     private static final UUID PET_ID    = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final UUID IMAGE_ID  = UUID.fromString("22222222-2222-2222-2222-222222222222");
 
     // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -462,5 +472,75 @@ class PetControllerTest {
                         .with(jwtFor(OWNER_ID)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].id").value(PET_ID.toString()));
+    }
+
+    // ── listing images ─────────────────────────────────────────────────────────
+
+    @Test
+    void uploadImageRequiresAuthentication() throws Exception {
+        MockMultipartFile file = new MockMultipartFile("file", "photo.png", "image/png", new byte[]{1});
+
+        mockMvc.perform(multipart("/api/v1/pets/{id}/images", PET_ID).file(file))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void uploadImageReturns201WithLocation() throws Exception {
+        String url = "/api/v1/pets/" + PET_ID + "/images/" + IMAGE_ID;
+        when(petImageService.upload(eq(PET_ID), eq(OWNER_ID), any()))
+                .thenReturn(new PetImageResponse(IMAGE_ID, url, "image/png", 0));
+        MockMultipartFile file = new MockMultipartFile("file", "photo.png", "image/png", new byte[]{1});
+
+        mockMvc.perform(multipart("/api/v1/pets/{id}/images", PET_ID)
+                        .file(file)
+                        .with(jwtFor(OWNER_ID)))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Location", url))
+                .andExpect(jsonPath("$.url").value(url));
+    }
+
+    @Test
+    void uploadImageRejectedByTheValidatorYields415() throws Exception {
+        org.mockito.Mockito.doThrow(new UnsupportedImageTypeException("image/gif"))
+                .when(petImageService).upload(eq(PET_ID), eq(OWNER_ID), any());
+        MockMultipartFile file = new MockMultipartFile("file", "anim.gif", "image/gif", new byte[]{1});
+
+        mockMvc.perform(multipart("/api/v1/pets/{id}/images", PET_ID)
+                        .file(file)
+                        .with(jwtFor(OWNER_ID)))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Unsupported image type"));
+    }
+
+    @Test
+    void deleteImageReturns204() throws Exception {
+        mockMvc.perform(delete("/api/v1/pets/{id}/images/{imageId}", PET_ID, IMAGE_ID)
+                        .with(jwtFor(OWNER_ID)))
+                .andExpect(status().isNoContent());
+
+        verify(petImageService).delete(PET_ID, IMAGE_ID, OWNER_ID);
+    }
+
+    @Test
+    void getImageIsPublicAndStreamsTheBytes() throws Exception {
+        when(petImageService.load(eq(PET_ID), eq(IMAGE_ID), isNull()))
+                .thenReturn(new ServedImage(new ByteArrayResource(new byte[]{7, 7, 7}), "image/png"));
+
+        mockMvc.perform(get("/api/v1/pets/{id}/images/{imageId}", PET_ID, IMAGE_ID))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.IMAGE_PNG))
+                .andExpect(content().bytes(new byte[]{7, 7, 7}));
+    }
+
+    @Test
+    void missingImageYields404ProblemDetail() throws Exception {
+        when(petImageService.load(eq(PET_ID), eq(IMAGE_ID), isNull()))
+                .thenThrow(new PetImageNotFoundException(IMAGE_ID));
+
+        mockMvc.perform(get("/api/v1/pets/{id}/images/{imageId}", PET_ID, IMAGE_ID))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Image not found"));
     }
 }

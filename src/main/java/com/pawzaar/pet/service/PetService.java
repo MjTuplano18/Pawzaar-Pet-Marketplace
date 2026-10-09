@@ -171,7 +171,7 @@ public class PetService {
      * the seller. This check must run AFTER confirming the pet exists; otherwise a 403
      * would leak the fact that the pet exists (which is its own information disclosure).
      */
-    private static void checkOwnership(Pet pet, UUID callerId) {
+    static void checkOwnership(Pet pet, UUID callerId) {
         if (!pet.getSellerId().equals(callerId)) {
             throw new ForbiddenPetAccessException(pet.getId());
         }

@@ -5,14 +5,20 @@ import com.pawzaar.pet.InvalidSortException;
 import com.pawzaar.pet.Species;
 import com.pawzaar.pet.dto.PetCreateRequest;
 import com.pawzaar.pet.dto.PetFilter;
+import com.pawzaar.pet.dto.PetImageResponse;
 import com.pawzaar.pet.dto.PetResponse;
 import com.pawzaar.pet.dto.PetSummary;
 import com.pawzaar.pet.dto.PetUpdateRequest;
+import com.pawzaar.pet.image.ServedImage;
+import com.pawzaar.pet.service.PetImageService;
 import com.pawzaar.pet.service.PetService;
 
 import jakarta.validation.Valid;
+import org.springframework.core.io.Resource;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -25,7 +31,9 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.net.URI;
@@ -51,6 +59,13 @@ import java.util.UUID;
  *   <li>GET    /api/v1/me/pets       - list the caller's own listings (all statuses)</li>
  * </ul>
  *
+ * <p>Listing images (owner only to write, public to read):
+ * <ul>
+ *   <li>POST   /api/v1/pets/{id}/images             - upload an image (multipart)</li>
+ *   <li>DELETE /api/v1/pets/{id}/images/{imageId}   - remove an image</li>
+ *   <li>GET    /api/v1/pets/{id}/images/{imageId}   - fetch the image bytes</li>
+ * </ul>
+ *
  * <p>The controller is intentionally thin: parse, validate, delegate to the service,
  * return the DTO. Ownership checks and business rules live in {@link PetService}.
  */
@@ -66,9 +81,11 @@ public class PetController {
     private static final Set<String> SORTABLE_FIELDS = Set.of("createdAt", "price", "ageMonths");
 
     private final PetService petService;
+    private final PetImageService petImageService;
 
-    public PetController(PetService petService) {
+    public PetController(PetService petService, PetImageService petImageService) {
         this.petService = petService;
+        this.petImageService = petImageService;
     }
 
     // ── PUBLIC ENDPOINTS ─────────────────────────────────────────────────────────────────────
@@ -199,5 +216,56 @@ public class PetController {
                 Sort.by(Sort.Direction.DESC, "createdAt"));
 
         return petService.getMyPets(sellerId, pageable);
+    }
+
+    // ── LISTING IMAGES ───────────────────────────────────────────────────────────────────────
+
+    /**
+     * Uploads one image for a listing (multipart/form-data, field name {@code file}).
+     * Returns 201 with a Location header pointing at the new image's bytes.
+     *
+     * <p>Allowed for USER or SELLER; the service then enforces that the caller owns the listing.
+     */
+    @PostMapping(path = "/pets/{id}/images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('USER', 'SELLER')")
+    public ResponseEntity<PetImageResponse> uploadPetImage(
+            @PathVariable UUID id,
+            @RequestPart("file") MultipartFile file,
+            @AuthenticationPrincipal Jwt jwt) {
+
+        UUID callerId = UUID.fromString(jwt.getSubject());
+        PetImageResponse created = petImageService.upload(id, callerId, file);
+        return ResponseEntity.created(URI.create(created.url())).body(created);
+    }
+
+    /** Removes an image from a listing (owner only). Returns 204. */
+    @DeleteMapping("/pets/{id}/images/{imageId}")
+    @PreAuthorize("hasAnyRole('USER', 'SELLER')")
+    public ResponseEntity<Void> deletePetImage(
+            @PathVariable UUID id,
+            @PathVariable UUID imageId,
+            @AuthenticationPrincipal Jwt jwt) {
+
+        UUID callerId = UUID.fromString(jwt.getSubject());
+        petImageService.delete(id, imageId, callerId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Streams an image's bytes. Public for ACTIVE listings; the owner may also fetch images of their
+     * own non-ACTIVE listing. Sends a long cache header because image bytes are immutable.
+     */
+    @GetMapping("/pets/{id}/images/{imageId}")
+    public ResponseEntity<Resource> getPetImage(
+            @PathVariable UUID id,
+            @PathVariable UUID imageId,
+            @AuthenticationPrincipal Jwt jwt) {
+
+        UUID callerId = jwt == null ? null : UUID.fromString(jwt.getSubject());
+        ServedImage image = petImageService.load(id, imageId, callerId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(image.contentType()))
+                .header(HttpHeaders.CACHE_CONTROL, "public, max-age=3600")
+                .body(image.resource());
     }
 }
