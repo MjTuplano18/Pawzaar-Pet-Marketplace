@@ -133,6 +133,18 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<!--
+					  `spring-boot:run` is a developer command, so it defaults to the local `dev`
+					  profile (datasource on localhost:5433, the dev JWT secret, SQL logging).
+					  Production runs the packaged jar with an explicit SPRING_PROFILES_ACTIVE=prod,
+					  so this default never applies there. Override when needed:
+					      ./mvnw spring-boot:run -Dspring-boot.run.profiles=prod
+					-->
+					<profiles>
+						<profile>dev</profile>
+					</profiles>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>
