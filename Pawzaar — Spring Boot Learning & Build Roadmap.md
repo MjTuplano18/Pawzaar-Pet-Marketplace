@@ -383,6 +383,7 @@ Work through this list in three passes: build it in now, finish it before the pu
 - [x] Delegating password encoder (`{bcrypt}` prefix) so the algorithm can be upgraded
 - [x] Passwords never logged, never returned in any response or exception message
 - [x] Ownership check in the service layer on every update and delete (user A gets 403 on user B's listing), with a test
+- [x] Role-based authorization with `@EnableMethodSecurity` + `@PreAuthorize` on write endpoints (`USER`/`SELLER`), with tests for allow and deny
 - [x] Return 401 (not 403) for anonymous requests to protected URLs
 - [x] Generic login error ("invalid email or password"); no hint about which part was wrong
 - [x] Strict CORS allowlist (your frontend domain only), never `*` with credentials

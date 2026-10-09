@@ -27,6 +27,8 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 
 import org.springframework.http.HttpMethod;
 
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+
 
 /**
  * Configures the security rules for the Pawzaar API.
@@ -36,6 +38,7 @@ import org.springframework.http.HttpMethod;
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
     // Creates the security filter chain used to protect API endpoints.

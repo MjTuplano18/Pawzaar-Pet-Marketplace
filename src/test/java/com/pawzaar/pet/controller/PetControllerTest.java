@@ -23,6 +23,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -44,6 +45,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <ul>
  *   <li>Public GET endpoints are accessible without a token</li>
  *   <li>POST/PUT/DELETE require authentication (401 when anonymous)</li>
+ *   <li>Role-based access (@PreAuthorize): USER may create, but only SELLER may update/delete</li>
  *   <li>Ownership check: a different user's token gets 403</li>
  *   <li>Input validation: missing required fields get 400</li>
  *   <li>Framework errors keep the ProblemDetail shape (bad UUID -> 400, malformed JSON -> 400)</li>
@@ -69,9 +71,22 @@ class PetControllerTest {
 
     // ── helpers ────────────────────────────────────────────────────────────────
 
-    /** JWT post-processor for a given user id. */
+    /** JWT post-processor for a given user id (defaults to the SELLER role). */
     private static SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor jwtFor(UUID userId) {
-        return jwt().jwt(b -> b.subject(userId.toString()).claim("role", "SELLER"));
+        return jwtFor(userId, "SELLER");
+    }
+
+    /**
+     * JWT post-processor for a user id AND role.
+     *
+     * We set the AUTHORITIES explicitly on purpose: MockMvc's jwt() post-processor builds the
+     * Authentication by hand and does NOT run our JwtAuthenticationConverter, so the "role" claim
+     * alone earns no authority. In production the converter does that mapping; here we mirror it.
+     */
+    private static SecurityMockMvcRequestPostProcessors.JwtRequestPostProcessor jwtFor(UUID userId, String role) {
+        return jwt()
+                .jwt(b -> b.subject(userId.toString()).claim("role", role))
+                .authorities(List.of(new SimpleGrantedAuthority("ROLE_" + role)));
     }
 
     private PetSummary fakeSummary() {
@@ -194,6 +209,76 @@ class PetControllerTest {
     void myPetsRequiresAuthentication() throws Exception {
         mockMvc.perform(get("/api/v1/me/pets"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // ── method security (@PreAuthorize): role-based access ─────────────────────
+
+    @Test
+    void createPetIsAllowedForAUserRole() throws Exception {
+        // A brand-new account is USER, and it MUST be able to post its first listing -
+        // posting is exactly what promotes it to SELLER. So create allows USER.
+        when(petService.createPet(eq(OWNER_ID), any())).thenReturn(fakeResponse());
+
+        PetCreateRequest req = new PetCreateRequest(
+                "Golden Retriever pup", Species.DOG, "Golden Retriever", 3,
+                new BigDecimal("15000.00"), "Vaccinated, dewormed, playful.",
+                "Meycauayan", "Bulacan", "MALE");
+
+        mockMvc.perform(post("/api/v1/pets")
+                        .with(jwtFor(OWNER_ID, "USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void createPetIsForbiddenForAnUnknownRole() throws Exception {
+        PetCreateRequest req = new PetCreateRequest(
+                "Golden Retriever pup", Species.DOG, "Golden Retriever", 3,
+                new BigDecimal("15000.00"), null,
+                "Meycauayan", "Bulacan", "MALE");
+
+        mockMvc.perform(post("/api/v1/pets")
+                        .with(jwtFor(OWNER_ID, "GUEST"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isForbidden())
+                // 9c: the denial keeps the RFC 9457 shape (before the handler this body was empty).
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Access denied"));
+
+        // The gate rejected the request before any business logic ran.
+        org.mockito.Mockito.verifyNoInteractions(petService);
+    }
+
+    @Test
+    void updateByNonSellerYields403ProblemDetail() throws Exception {
+        // A USER token passes authentication but fails hasRole('SELLER').
+        PetUpdateRequest req = new PetUpdateRequest(
+                "Updated title", "Golden Retriever", 4,
+                new BigDecimal("16000.00"), "Updated desc",
+                "Meycauayan", "Bulacan", "MALE", PetStatus.ACTIVE);
+
+        mockMvc.perform(put("/api/v1/pets/{id}", PET_ID)
+                        .with(jwtFor(OWNER_ID, "USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Access denied"));
+
+        org.mockito.Mockito.verifyNoInteractions(petService);
+    }
+
+    @Test
+    void deleteByNonSellerYields403() throws Exception {
+        mockMvc.perform(delete("/api/v1/pets/{id}", PET_ID)
+                        .with(jwtFor(OWNER_ID, "USER")))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Access denied"));
+
+        org.mockito.Mockito.verifyNoInteractions(petService);
     }
 
     // ── ownership check ────────────────────────────────────────────────────────

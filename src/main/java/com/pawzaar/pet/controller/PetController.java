@@ -13,6 +13,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -92,6 +93,7 @@ public class PetController {
      * Returns 201 Created with a Location header pointing to the new resource.
      */
     @PostMapping("/pets")
+    @PreAuthorize("hasAnyRole('USER', 'SELLER')")
     public ResponseEntity<PetResponse> createPet(
             @Valid @RequestBody PetCreateRequest request,
             @AuthenticationPrincipal Jwt jwt) {
@@ -110,6 +112,7 @@ public class PetController {
      * 404 if the listing does not exist.
      */
     @PutMapping("/pets/{id}")
+    @PreAuthorize("hasRole('SELLER')")
     public PetResponse updatePet(
             @PathVariable UUID id,
             @Valid @RequestBody PetUpdateRequest request,
@@ -124,6 +127,7 @@ public class PetController {
      * Returns 204 No Content on success, 403 if not the owner, 404 if not found.
      */
     @DeleteMapping("/pets/{id}")
+    @PreAuthorize("hasRole('SELLER')")
     public ResponseEntity<Void> deletePet(
             @PathVariable UUID id,
             @AuthenticationPrincipal Jwt jwt) {
@@ -138,6 +142,7 @@ public class PetController {
      * Example: GET /api/v1/me/pets?page=0&size=20
      */
     @GetMapping("/me/pets")
+    @PreAuthorize("isAuthenticated()")
     public PagedResponse<PetSummary> getMyPets(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,

@@ -10,6 +10,7 @@ import com.pawzaar.user.InvalidRefreshTokenException;      // "refresh token bad
 
 // === Spring's HTTP layer ===
 import org.springframework.dao.OptimisticLockingFailureException;  // @Version race        -> 409
+import org.springframework.security.access.AccessDeniedException;  // @PreAuthorize denied -> 403
 import org.springframework.http.HttpStatus;      // enum of HTTP codes: NOT_FOUND, CONFLICT, BAD_REQUEST...
 import org.springframework.http.ProblemDetail;   // Spring's built-in RFC 9457 "problem details" object
 import org.springframework.http.converter.HttpMessageNotReadableException;  // malformed JSON -> 400
@@ -63,6 +64,21 @@ public class GlobalExceptionHandler {
                 HttpStatus.FORBIDDEN,          // 403
                 "You do not have permission to modify this listing"
         );
+        problem.setTitle("Access denied");
+        return problem;
+    }
+
+    // 403 Forbidden: a method-security check (@PreAuthorize) rejected the call.
+    // Catching it HERE matters: without this handler the exception escapes MVC and Spring
+    // Security's filter chain answers with an EMPTY body - breaking the "one error format" rule.
+    // This keeps the 403 in the same RFC 9457 shape as every other error.
+    // (Access denials raised by the URL rules in SecurityConfig happen BEFORE MVC reaches the
+    //  controller, so this advice cannot see those - only method-security ones.)
+    @ExceptionHandler(AccessDeniedException.class)
+    public ProblemDetail handleAccessDenied(AccessDeniedException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.FORBIDDEN,          // 403
+                "You do not have permission to perform this action");
         problem.setTitle("Access denied");
         return problem;
     }

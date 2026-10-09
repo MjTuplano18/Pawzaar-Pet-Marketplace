@@ -33,7 +33,7 @@ reader who knows core Java and OOP — but not Spring Boot — can follow along.
 
 A **Philippines-focused pet marketplace API**. Buyers browse pets for sale; sellers post listings.
 
-Currently implemented (through Step 8):
+Currently implemented (through Step 9):
 
 | Capability | Status |
 |---|---|
@@ -41,12 +41,13 @@ Currently implemented (through Step 8):
 | Public, paginated pet browsing (`GET /pets`) | ✅ done |
 | Pet detail with a clean 404 (`GET /pets/{id}`) | ✅ done |
 | One consistent error format (RFC 9457) | ✅ done |
-| Automated tests (web slice + DB slice + unit) | ✅ 52 tests |
+| Automated tests (web slice + DB slice + unit) | ✅ 56 tests |
 | User registration with hashed passwords | ✅ done |
 | Login + JWT issuance, token verification on protected routes | ✅ done (Step 6.3) |
 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ done |
 | Seller endpoints that use the token for **authorization** (ownership) | ✅ done (Step 7) |
 | `USER` → `SELLER` promotion on first listing | ✅ done |
+| **Role-based authorization** via `@PreAuthorize` (seller-only writes) | ✅ done (Step 9) |
 | Strict CORS allowlist | ✅ done |
 | OpenAPI/Swagger UI, profiles, actuator health | ✅ done |
 | GitHub Actions CI, `README`, multi-stage Dockerfile | ✅ done |
@@ -323,6 +324,10 @@ return http.build();
 **Rule: specific permits first, catch-all last.** Rules are evaluated top-down and the first
 match wins. If `.anyRequest().authenticated()` came first, every permit below it would be dead
 code.
+
+The class also carries **`@EnableMethodSecurity`**. That is the switch that makes
+`@PreAuthorize` on individual controller methods actually enforced (see §9). Without it the
+annotation is inert — it compiles, it reads correctly, and it does nothing.
 
 ### 6.5 `config/PasswordEncoderConfig`
 
@@ -717,7 +722,7 @@ cookies. CORS is a *browser* policy: Postman ignores it, so "it worked in Postma
 about whether the front end can call the API.
 
 Note the **`HttpMethod.GET`**: anonymous users may *look* at pets, but `POST /api/v1/pets`
-(once it exists) stays locked. Browsing is public; acting is not.
+stays locked. Browsing is public; acting is not.
 
 Session handling is `STATELESS` — no cookies, no server-side session. That is why CSRF is
 disabled (CSRF protection exists to protect cookie-based sessions) and why Step 6 uses an
@@ -749,6 +754,46 @@ The filter chain's `BearerTokenAuthenticationFilter` (installed by
 
 Everything else (`@WebMvcTest` slices, `spring-security-test`, Postman) understands the same
 convention, so nothing else had to be written.
+
+### Method-level authorization (`@PreAuthorize`)
+
+The filter chain decides **whether you may reach a URL at all**. `@PreAuthorize` decides
+**whether you may perform this specific operation**. They are two gates in a row:
+
+```
+request ──▶ filter chain (URL rules) ──▶ controller
+                  │                          │
+            anonymous? 401            @PreAuthorize fails? 403
+```
+
+`@EnableMethodSecurity` (on `SecurityConfig`) turns these annotations on. Each controller method
+then declares its own rule, right next to the endpoint it protects:
+
+| Endpoint | Rule | Why |
+|---|---|---|
+| `POST /pets` | `hasAnyRole('USER', 'SELLER')` | a brand-new account is `USER`; posting is exactly what promotes it to `SELLER`. Requiring `SELLER` here would be a chicken-and-egg trap. |
+| `PUT /pets/{id}` | `hasRole('SELLER')` | only sellers edit listings. |
+| `DELETE /pets/{id}` | `hasRole('SELLER')` | only sellers delete listings. |
+| `GET /me/pets` | `isAuthenticated()` | any logged-in user may read their own listings. |
+
+Three things that trip people up:
+
+* **`hasRole('SELLER')` is not `hasAuthority('SELLER')`.** `hasRole` auto-prepends `ROLE_`, so it
+  matches the `ROLE_SELLER` authority that `JwtAuthenticationConverter` builds. `hasAuthority`
+  would silently never match.
+* **Roles ride in the token.** Promote a `USER` to `SELLER` in the database and their *current*
+  access token still says `USER` until it expires or is refreshed. In that window they can
+  `create` but get `403` on `update`/`delete`. This is the normal cost of stateless JWTs; a fresh
+  `/auth/refresh` re-reads the role and mints a token that works. (Live-verified in Step 9.)
+* **Two different `403`s.** A denial from the *method* check throws `AccessDeniedException`,
+  which happens inside MVC, so `GlobalExceptionHandler` catches it and returns the normal
+  `ProblemDetail` body. A denial from the *URL* rules happens before MVC, so the security filter
+  chain answers it (and a bare filter-chain 403 has an empty body). Method security is the kind
+  you will see most often.
+
+**Authorization still lives in `PetService` too.** `@PreAuthorize` answers "is this a seller?";
+ownership ("is this *your* pet?") can only be answered from the database, so the service keeps
+its check. The controller keeps requests cheap; the service keeps them correct.
 
 ---
 
@@ -812,14 +857,14 @@ Controller  →  returns PetResponse (DTO)     ← entities never reach here
 
 | Test | Boots | Database? | What it proves |
 |---|---|---|---|
-| `PetControllerTest` (`@WebMvcTest`) | web layer only | ❌ (service is mocked) | status codes, JSON shape, 404/bad-UUID/malformed-JSON all in `ProblemDetail` format, security whitelist |
+| `PetControllerTest` (`@WebMvcTest`) | web layer only | ❌ (service is mocked) | status codes, JSON shape, 404/bad-UUID/malformed-JSON all in `ProblemDetail` format, security whitelist, `@PreAuthorize` role rules (incl. the `403` body) |
 | `PetRepositoryTest` (`@DataJpaTest`) | JPA layer | ✅ (real Docker Postgres, rolled back after each test) | queries, pagination counts, `Optional` behaviour, status filtering |
 | `PetServiceTest` (plain Mockito) | nothing (no Spring) | ❌ repository is a mock | business rules: `ACTIVE`-only listing, ownership, admin-only status rejected, `USER`→`SELLER` promotion |
 | `AuthServiceTest` (plain Mockito, real BCrypt) | nothing | ❌ repositories are mocks | login rules (correct/wrong/unknown password, legacy hashes, normalization) **and** refresh rotation/revocation + idempotent logout |
 | `AuthControllerTest` (`@WebMvcTest`) | web layer | ❌ (service mocked) | login/refresh/logout are public, token JSON shape, 401 problem details, 400 validation |
 | `PawzaarApiApplicationTests` (`@SpringBootTest`) | everything | ✅ | the whole context starts |
 
-Current total: **52 tests**, all green with `mvn test`.
+Current total: **56 tests**, all green with `mvn test`.
 
 ```bash
 .\mvnw.cmd test                                            # all tests
@@ -859,7 +904,8 @@ When something breaks, ask: **which stage of the flow lied?**
 ```
 Symptom                          Most likely stage               Where to look
 --------------------------------------------------------------------------------------
-403, empty body                  security chain (stage 1)       SecurityConfig whitelist?
+403, empty body                  filter chain (stage 1)         SecurityConfig URL rules?
+403 + JSON body                  @PreAuthorize or ownership      role rule, or PetService owner check
 401                              auth present but token missing  (Step 6.4)
 404 + JSON body                  your exception (stage 4)        GlobalExceptionHandler
 405 / 400                        your code (stages 2–3)          controller, DTO validation
@@ -900,6 +946,10 @@ Worth remembering, because each cost real time:
 | **IntelliJ green, Maven red** | the IDE does its own Lombok processing | trust `mvn test`, not only the IDE. |
 | **Repeated `maven.compiler.proc` flag eaten** | `-D...` without quotes in PowerShell | quote `-D` arguments: `"-Dmaven.compiler.proc=full"`. |
 | **Editing an applied Flyway migration** | the working-tree `V3` no longer matched the committed one, yet the DB still held the old seed row | migrations are append-only: fix data with a new `V…` file. `Flyway.repair()` only realigns the stored checksum — it does **not** change data. |
+| **`@PreAuthorize` denial answered with an empty body** | method security threw `AccessDeniedException`, which escaped MVC and was answered by the security filter chain with no JSON | add an `AccessDeniedException` handler to `GlobalExceptionHandler` so the `403` keeps the RFC 9457 shape. Filter-chain denials (URL rules) still have empty bodies — they happen before MVC. |
+| **`hasAuthority('SELLER')` never matches** | the authority is `ROLE_SELLER`, not `SELLER` | use `hasRole('SELLER')`; `hasRole` auto-prepends `ROLE_`. |
+| **Forgetting `@EnableMethodSecurity`** | `@PreAuthorize` compiled and looked right but enforced nothing | method security is off by default; switch it on on the `SecurityConfig` class. |
+| **MockMvc `jwt()` bypasses our converter** | a test set the `role` claim yet got `403`; the authority was never created | the post-processor builds the `Authentication` itself and does not run `JwtAuthenticationConverter`; set `.authorities(List.of(new SimpleGrantedAuthority("ROLE_"+role)))` explicitly in tests. |
 
 ---
 
@@ -995,7 +1045,8 @@ imports.
 | 8.2 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ |
 | 8.3 | Strict CORS allowlist; `USER` → `SELLER` promotion on first listing | ✅ |
 | 8.4 | GitHub Actions CI, `README`, multi-stage Dockerfile | ✅ |
-| 9 | Next up: `@PreAuthorize` role rules, rate limiting, image upload, search filters | ⏳ |
+| 9 | Role-based authorization: `@EnableMethodSecurity` + `@PreAuthorize` on writes; `403` kept in `ProblemDetail` | ✅ |
+| 10 | Next up: rate limiting, image upload, search filters | ⏳ |
 
 ---
 
