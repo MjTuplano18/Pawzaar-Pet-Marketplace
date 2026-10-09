@@ -1,524 +1,371 @@
 {
   "info": {
-    "_postman_id": "pawzaar-api-step5",
+    "_postman_id": "pawzaar-api-step8",
     "name": "Pawzaar API",
-    "description": "Step 5 test suite for the Pawzaar pet marketplace.\n\nRun order matters: execute 'Get pets (list)' FIRST — it stores the first pet's id into the collection variable {{pet_id}}, which the detail request then uses.",
+    "description": "Full test suite covering all endpoints built through Week 8.\n\nRun order matters inside each folder. The '06 Pets (write)' folder must run AFTER '05 Login' because it relies on {{access_token}} and {{seed_token}}.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    {
-      "key": "base_url",
-      "value": "http://localhost:8080",
-      "type": "string"
-    },
-    {
-      "key": "pet_id",
-      "value": "",
-      "type": "string"
-    }
+    { "key": "base_url",     "value": "http://localhost:8080", "type": "string" },
+    { "key": "pet_id",       "value": "", "type": "string" },
+    { "key": "created_pet_id", "value": "", "type": "string" },
+    { "key": "user_id",      "value": "", "type": "string" },
+    { "key": "user_email",   "value": "", "type": "string" },
+    { "key": "access_token", "value": "", "type": "string" },
+    { "key": "seed_token",   "value": "", "type": "string" }
   ],
   "item": [
     {
       "name": "01 Health",
-      "description": "Liveness check — the only route that has always been public.",
       "item": [
         {
           "name": "GET health",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Body says ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/health",
-            "description": "Should return {\"status\":\"ok\"} with no authentication."
-          }
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 ok', () => pm.response.to.have.status(200));",
+            "pm.test('body.status = ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/health" }
         }
       ]
     },
     {
-      "name": "02 Pets (public GET)",
-      "description": "The Step 5 endpoints — must be reachable WITHOUT logging in.",
+      "name": "02 Pets (public read)",
       "item": [
         {
-          "name": "GET pets (list)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200 (public!)', () => pm.response.to.have.status(200));",
-                  "const body = pm.response.json();",
-                  "pm.test('Returns a Spring Page with content', () => pm.expect(body.content).to.be.an('array'));",
-                  "pm.test('Page size capped at 50 even if size=500', () => pm.expect(body.content.length).to.be.at.most(50));",
-                  "// Remember the first pet's id so the detail request can use it:",
-                  "if (body.content.length > 0) {",
-                  "    pm.collectionVariables.set('pet_id', body.content[0].id);",
-                  "    pm.test('Saved pet_id = ' + body.content[0].id, () => pm.expect(body.content[0].id).to.be.a('string'));",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/pets?size=500",
-            "description": "Deliberately asks for size=500 to PROVE the server caps it at 50. Also auto-saves the first pet id into {{pet_id}}."
-          }
+          "name": "GET pets — list (saves pet_id)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 public', () => pm.response.to.have.status(200));",
+            "const b = pm.response.json();",
+            "pm.test('PagedResponse shape: content array', () => pm.expect(b.content).to.be.an('array'));",
+            "pm.test('PagedResponse shape: totalElements', () => pm.expect(b).to.have.property('totalElements'));",
+            "pm.test('PagedResponse shape: page', ()         => pm.expect(b).to.have.property('page'));",
+            "pm.test('PagedResponse shape: totalPages', ()   => pm.expect(b).to.have.property('totalPages'));",
+            "pm.test('size capped at 50 even when 500 requested', () => pm.expect(b.content.length).to.be.at.most(50));",
+            "if (b.content.length > 0) { pm.collectionVariables.set('pet_id', b.content[0].id); }"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/pets?size=500" }
         },
         {
-          "name": "GET pets (list, defaults)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Default page returns the 3 seed pets', () => {",
-                  "    const n = pm.response.json().content.length;",
-                  "    pm.expect(n).to.be.at.least(1);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/pets",
-            "description": "No query params: server defaults apply (page=0, size=20, sort=createdAt desc)."
-          }
+          "name": "GET pets — summary has sex field",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const pets = pm.response.json().content;",
+            "pm.test('at least one seed pet returned', () => pm.expect(pets.length).to.be.at.least(1));",
+            "pm.test('summary has sex field', () => pm.expect(pets[0]).to.have.property('sex'));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/pets" }
         },
         {
-          "name": "GET pet by id (detail)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "const b = pm.response.json();",
-                  "pm.test('Detail has description (not in the summary)', () => pm.expect(b).to.have.property('description'));",
-                  "pm.test('Detail has sellerId', () => pm.expect(b).to.have.property('sellerId'));",
-                  "pm.test('id matches {{pet_id}}', () => pm.expect(b.id).to.eql(pm.collectionVariables.get('pet_id')));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/pets/{{pet_id}}",
-            "description": "Run 'GET pets (list)' first — it fills {{pet_id}}. Uses a REAL id from the database."
-          }
+          "name": "GET pet by id — detail",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const b = pm.response.json();",
+            "pm.test('has description', () => pm.expect(b).to.have.property('description'));",
+            "pm.test('has sellerId',    () => pm.expect(b).to.have.property('sellerId'));",
+            "pm.test('has sex',         () => pm.expect(b).to.have.property('sex'));",
+            "pm.test('has updatedAt',   () => pm.expect(b).to.have.property('updatedAt'));",
+            "pm.test('id matches pet_id', () => pm.expect(b.id).to.eql(pm.collectionVariables.get('pet_id')));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/pets/{{pet_id}}" }
         },
         {
-          "name": "GET pet — not found (404)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
-                  "pm.test('Content-Type is application/problem+json', () => pm.response.to.have.header('Content-Type', /problem\\+json/));",
-                  "const b = pm.response.json();",
-                  "pm.test('RFC 9457: title', () => pm.expect(b.title).to.eql('Pet not found'));",
-                  "pm.test('RFC 9457: status', () => pm.expect(b.status).to.eql(404));",
-                  "pm.test('RFC 9457: detail mentions the id', () => pm.expect(b.detail).to.include('00000000-0000-0000-0000-000000000000'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/pets/00000000-0000-0000-0000-000000000000",
-            "description": "A syntactically valid but nonexistent UUID → PetNotFoundException → your GlobalExceptionHandler."
-          }
+          "name": "GET pet — 404 ProblemDetail",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('404', () => pm.response.to.have.status(404));",
+            "pm.test('problem+json', () => pm.response.to.have.header('Content-Type', /problem\\+json/));",
+            "const b = pm.response.json();",
+            "pm.test('title = Pet not found', () => pm.expect(b.title).to.eql('Pet not found'));",
+            "pm.test('status = 404', () => pm.expect(b.status).to.eql(404));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/pets/00000000-0000-0000-0000-000000000000" }
         },
         {
-          "name": "GET pet — malformed id (400)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 400 (Spring default, no handler written yet)', () => pm.response.to.have.status(400));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/pets/not-a-uuid",
-            "description": "String that cannot convert to UUID → Spring's built-in 400. (A prettier 400 body would need another @ExceptionHandler — not part of Step 5.)"
-          }
+          "name": "GET pet — 400 malformed UUID",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('400 not 500', () => pm.response.to.have.status(400));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/pets/not-a-uuid" }
         }
       ]
     },
     {
-      "name": "03 Security (must stay locked)",
-      "description": "Negative tests — these prove your SecurityConfig still works.",
-      "item": [
-        {
-          "name": "GET unknown route → 403",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 403 Forbidden', () => pm.response.to.have.status(403));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/users",
-            "description": "Not whitelisted and we have no auth yet -> denied with 403 (it becomes a JSON 401 once Step 6 adds a real login)."
-          }
-        },
-        {
-          "name": "POST pets → 403 (GET-only whitelist)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 403 (only GET is public)', () => pm.response.to.have.status(403));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"Should not be possible yet\",\n  \"species\": \"DOG\",\n  \"price\": 1000\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": "{{base_url}}/api/v1/pets",
-            "description": "Proves HttpMethod.GET matters: POST /pets is NOT whitelisted even though GET /pets is. (Once Step 6 adds real auth, this is where a Bearer token would go.)"
-          }
-        }
-      ]
-    },
-    {
-      "name": "04 Auth (Step 6.2 - register)",
-      "description": "Registration tests. Postman sends real JSON, so there is no PowerShell quote-mangling. Run the happy path FIRST, then the two failure cases.",
+      "name": "03 Auth — register",
       "item": [
         {
           "name": "POST register (201)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
-                  "pm.test('Location header points at the new user', () => pm.expect(pm.response.headers.get('Location')).to.include('/api/v1/users/'));",
-                  "pm.test('Response has NO password field', () => pm.expect(pm.response.json()).to.not.have.property('password'));",
-                  "pm.test('Response has NO bcrypt hash', () => pm.expect(pm.response.text()).to.not.include('$2a$'));",
-                  "pm.test('New account starts as USER / unverified', () => {",
-                  "    const b = pm.response.json();",
-                  "    pm.expect(b.role).to.eql('USER');",
-                  "    pm.expect(b.verified).to.eql(false);",
-                  "    pm.collectionVariables.set('user_id', b.id);",
-                  "    pm.collectionVariables.set('user_email', b.email);",
-                  "});",
-                  "console.log('saved {{user_id}} =', pm.collectionVariables.get('user_id'));"
-                ]
-              }
-            }
-          ],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "pm.test('Location header', () => pm.expect(pm.response.headers.get('Location')).to.include('/api/v1/users/'));",
+            "const b = pm.response.json();",
+            "pm.test('no password in response', () => pm.expect(b).to.not.have.property('password'));",
+            "pm.test('no hash in response',     () => pm.expect(pm.response.text()).to.not.include('$2a$'));",
+            "pm.test('role = USER',    () => pm.expect(b.role).to.eql('USER'));",
+            "pm.test('verified = false', () => pm.expect(b.verified).to.eql(false));",
+            "pm.collectionVariables.set('user_id',    b.id);",
+            "pm.collectionVariables.set('user_email', b.email);"
+          ]}}],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"ana@email.com\",\n  \"password\": \"pawzaar123\",\n  \"displayName\": \"Ana Reyes\",\n  \"phone\": \"+639171234567\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"ana@email.com\",\n  \"password\": \"pawzaar123\",\n  \"displayName\": \"Ana Reyes\",\n  \"phone\": \"+639171234567\"\n}", "options": { "raw": { "language": "json" }}},
             "url": "{{base_url}}/api/v1/auth/register",
-            "description": "Creates a user. Change the email each run (a duplicate returns 409) or delete the row with: docker exec pawzaar-db psql -U pawzaar -d pawzaar -c \"DELETE FROM users WHERE email='ana@email.com';\""
+            "description": "Change the email each run if 409 appears, or delete the row:\ndocker exec pawzaar-db psql -U pawzaar -d pawzaar -c \"DELETE FROM users WHERE email='ana@email.com';\""
           }
         },
         {
-          "name": "POST register again → 409",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));",
-                  "const b = pm.response.json();",
-                  "pm.test('RFC 9457 title', () => pm.expect(b.title).to.eql('Email already registered'));",
-                  "pm.test('ProblemDetail content type', () => pm.response.to.have.header('Content-Type', /problem\\+json/));"
-                ]
-              }
-            }
-          ],
+          "name": "POST register — 409 duplicate",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('409 Conflict', () => pm.response.to.have.status(409));",
+            "pm.test('title = Email already registered', () => pm.expect(pm.response.json().title).to.eql('Email already registered'));"
+          ]}}],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"ana@email.com\",\n  \"password\": \"pawzaar123\",\n  \"displayName\": \"Ana Reyes\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": "{{base_url}}/api/v1/auth/register",
-            "description": "Same email as the request above → EmailAlreadyRegisteredException → 409 via GlobalExceptionHandler."
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"ana@email.com\",\n  \"password\": \"pawzaar123\",\n  \"displayName\": \"Ana Reyes\"\n}", "options": { "raw": { "language": "json" }}},
+            "url": "{{base_url}}/api/v1/auth/register"
           }
         },
         {
-          "name": "POST register invalid → 400",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 400 Bad Request', () => pm.response.to.have.status(400));",
-                  "const b = pm.response.json();",
-                  "pm.test('RFC 9457 title', () => pm.expect(b.title).to.eql('Validation failed'));",
-                  "pm.test('errors array lists all 3 bad fields', () => pm.expect(b.errors).to.have.lengthOf(3));"
-                ]
-              }
-            }
-          ],
+          "name": "POST register — 400 validation",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('400', () => pm.response.to.have.status(400));",
+            "pm.test('title = Validation failed', () => pm.expect(pm.response.json().title).to.eql('Validation failed'));",
+            "pm.test('errors array present', () => pm.expect(pm.response.json().errors).to.be.an('array').with.length.at.least(1));"
+          ]}}],
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"not-an-email\",\n  \"password\": \"short\",\n  \"displayName\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": "{{base_url}}/api/v1/auth/register",
-            "description": "@Valid rejects this BEFORE the service runs - no database call happens."
-          }
-        },
-        {
-          "name": "POST register malformed JSON → 400",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 400 (unparseable body, NOT 403)', () => pm.response.to.have.status(400));",
-                  "console.log('This is what PowerShell curl used to send by accident.');"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{ this is not valid json }",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": "{{base_url}}/api/v1/auth/register",
-            "description": "Reproduces the PowerShell quote-mangling bug from the CLI - and proves the /error permitAll fix: the real 400 is visible instead of a mystery 403."
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"not-an-email\",\n  \"password\": \"short\",\n  \"displayName\": \"\"\n}", "options": { "raw": { "language": "json" }}},
+            "url": "{{base_url}}/api/v1/auth/register"
           }
         }
       ]
     },
     {
-      "name": "05 Login & JWT (Step 6.3)",
-      "description": "Login issues a JWT; the token then travels in the Authorization header. Run 'POST login' first - it saves {{access_token}} for the other requests.",
+      "name": "04 Auth — login",
       "item": [
         {
-          "name": "POST login (200 + token)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "const b = pm.response.json();",
-                  "pm.test('Token type is Bearer', () => pm.expect(b.tokenType).to.eql('Bearer'));",
-                  "pm.test('Token has 3 JWT segments', () => pm.expect(b.accessToken.split('.')).to.have.lengthOf(3));",
-                  "pm.test('Expiry is 30 minutes', () => pm.expect(b.expiresInSeconds).to.eql(1800));",
-                  "pm.collectionVariables.set('access_token', b.accessToken);"
-                ]
-              }
-            }
-          ],
+          "name": "POST login as ana (saves access_token)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const b = pm.response.json();",
+            "pm.test('tokenType = Bearer',      () => pm.expect(b.tokenType).to.eql('Bearer'));",
+            "pm.test('3 JWT segments',           () => pm.expect(b.accessToken.split('.')).to.have.lengthOf(3));",
+            "pm.test('expiresInSeconds = 1800',  () => pm.expect(b.expiresInSeconds).to.eql(1800));",
+            "pm.collectionVariables.set('access_token', b.accessToken);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"ana@email.com\",\n  \"password\": \"pawzaar123\"\n}", "options": { "raw": { "language": "json" }}},
+            "url": "{{base_url}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "POST login as seed seller (saves seed_token)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('seed_token', pm.response.json().accessToken);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"seed@pawzaar.test\",\n  \"password\": \"pawzaar123\"\n}", "options": { "raw": { "language": "json" }}},
+            "url": "{{base_url}}/api/v1/auth/login",
+            "description": "Logs in as the seed seller. Requires the dev profile so V3 seed data is present and the hash is a real BCrypt value."
+          }
+        },
+        {
+          "name": "POST login — 401 wrong password",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('401', () => pm.response.to.have.status(401));",
+            "pm.test('detail = Invalid email or password', () => pm.expect(pm.response.json().detail).to.eql('Invalid email or password'));",
+            "pm.test('no email field in response (no enumeration)', () => pm.expect(pm.response.json()).to.not.have.property('email'));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"ana@email.com\",\n  \"password\": \"wrong\"\n}", "options": { "raw": { "language": "json" }}},
+            "url": "{{base_url}}/api/v1/auth/login"
+          }
+        },
+        {
+          "name": "GET protected — 401 no token",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('401 (not 403)', () => pm.response.to.have.status(401));",
+            "pm.test('WWW-Authenticate: Bearer', () => pm.expect(pm.response.headers.get('WWW-Authenticate')).to.include('Bearer'));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/me/pets" }
+        },
+        {
+          "name": "GET protected — passes with token",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('not rejected by security (no 401/403)', () => pm.expect(pm.response.code).to.not.be.oneOf([401, 403]));"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/me/pets"
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 Pets (write — run after 04 Login)",
+      "description": "Requires {{access_token}} (ana) and {{seed_token}} (seed seller) from folder 04.",
+      "item": [
+        {
+          "name": "POST pet — 401 no token",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('401 anonymous cannot create', () => pm.response.to.have.status(401));"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" }}},
+            "url": "{{base_url}}/api/v1/pets"
+          }
+        },
+        {
+          "name": "POST pet — 400 validation (blank title)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('400 validation', () => pm.response.to.have.status(400));",
+            "pm.test('title error listed', () => {",
+            "    const errors = pm.response.json().errors;",
+            "    pm.expect(errors.some(e => e.field === 'title')).to.be.true;",
+            "});"
+          ]}}],
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"ana@email.com\",\n  \"password\": \"pawzaar123\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": "{{base_url}}/api/v1/auth/login",
-            "description": "Verifies the BCrypt hash and returns a signed JWT. The password travels in the BODY, never in the URL."
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"\",\n  \"species\": \"DOG\",\n  \"ageMonths\": 3,\n  \"price\": 10000,\n  \"city\": \"Manila\",\n  \"province\": \"Metro Manila\"\n}", "options": { "raw": { "language": "json" }}},
+            "url": "{{base_url}}/api/v1/pets"
           }
         },
         {
-          "name": "POST login wrong password → 401",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
-                  "const b = pm.response.json();",
-                  "pm.test('RFC 9457 title', () => pm.expect(b.title).to.eql('Invalid credentials'));",
-                  "pm.test('Identical message to unknown email (no user enumeration)', () => pm.expect(b.detail).to.eql('Invalid email or password'));",
-                  "pm.test('Does not echo the email back', () => pm.expect(b).to.not.have.property('email'));"
-                ]
-              }
-            }
-          ],
+          "name": "POST pet — 201 create (saves created_pet_id)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created', () => pm.response.to.have.status(201));",
+            "const b = pm.response.json();",
+            "pm.test('Location header', () => pm.expect(pm.response.headers.get('Location')).to.include('/api/v1/pets/'));",
+            "pm.test('has updatedAt', () => pm.expect(b).to.have.property('updatedAt'));",
+            "pm.test('sex = MALE',    () => pm.expect(b.sex).to.eql('MALE'));",
+            "pm.test('status = ACTIVE', () => pm.expect(b.status).to.eql('ACTIVE'));",
+            "pm.collectionVariables.set('created_pet_id', b.id);"
+          ]}}],
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"ana@email.com\",\n  \"password\": \"definitely-wrong\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": "{{base_url}}/api/v1/auth/login",
-            "description": "A wrong password and an unknown email deliberately produce the SAME response."
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Ana's test puppy\",\n  \"species\": \"DOG\",\n  \"breed\": \"Aspin\",\n  \"ageMonths\": 3,\n  \"price\": 500.00,\n  \"description\": \"Friendly and vaccinated.\",\n  \"city\": \"Quezon City\",\n  \"province\": \"Metro Manila\",\n  \"sex\": \"MALE\"\n}", "options": { "raw": { "language": "json" }}},
+            "url": "{{base_url}}/api/v1/pets"
           }
         },
         {
-          "name": "Protected route WITHOUT token → 401",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 401 Unauthorized', () => pm.response.to.have.status(401));",
-                  "pm.test('WWW-Authenticate advertises Bearer', () => pm.expect(pm.response.headers.get('WWW-Authenticate')).to.include('Bearer'));"
-                ]
-              }
-            }
-          ],
+          "name": "GET my pets — see the new listing",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const b = pm.response.json();",
+            "pm.test('PagedResponse shape', () => pm.expect(b).to.have.all.keys('content','page','size','totalElements','totalPages'));",
+            "pm.test('new listing appears', () => {",
+            "    const found = b.content.some(p => p.id === pm.collectionVariables.get('created_pet_id'));",
+            "    pm.expect(found).to.be.true;",
+            "});"
+          ]}}],
           "request": {
             "method": "GET",
-            "header": [],
-            "url": "{{base_url}}/api/v1/users",
-            "description": "Anonymous request to a protected route. With the JWT resource server wired this is 401 (it was 403 before Step 6.3)."
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/me/pets"
           }
         },
         {
-          "name": "Protected route WITH token → passes security",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Not blocked by security (401/403 would mean the token was rejected)', () => {",
-                  "    pm.expect(pm.response.code).to.be.oneOf([200, 400, 404, 405]);",
-                  "});"
-                ]
-              }
-            }
-          ],
+          "name": "PUT pet — 200 update by owner",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "const b = pm.response.json();",
+            "pm.test('title updated',    () => pm.expect(b.title).to.eql('Ana\\'s updated puppy'));",
+            "pm.test('price updated',    () => pm.expect(b.price).to.eql(600));",
+            "pm.test('updatedAt exists', () => pm.expect(b).to.have.property('updatedAt'));"
+          ]}}],
           "request": {
-            "method": "GET",
+            "method": "PUT",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{access_token}}"
-              }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
             ],
-            "url": "{{base_url}}/api/v1/users",
-            "description": "Same URL, now WITH the token. Expect 404 - meaning the token was accepted and only the endpoint is missing."
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Ana's updated puppy\",\n  \"breed\": \"Aspin\",\n  \"ageMonths\": 4,\n  \"price\": 600.00,\n  \"description\": \"Updated description.\",\n  \"city\": \"Quezon City\",\n  \"province\": \"Metro Manila\",\n  \"sex\": \"MALE\",\n  \"status\": \"ACTIVE\"\n}", "options": { "raw": { "language": "json" }}},
+            "url": "{{base_url}}/api/v1/pets/{{created_pet_id}}"
+          }
+        },
+        {
+          "name": "PUT pet — 403 wrong owner (seed seller tries to edit ana's pet)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('403 Forbidden', () => pm.response.to.have.status(403));",
+            "pm.test('problem+json', () => pm.response.to.have.header('Content-Type', /problem\\+json/));",
+            "pm.test('title = Access denied', () => pm.expect(pm.response.json().title).to.eql('Access denied'));"
+          ]}}],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{seed_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Hacked title\",\n  \"ageMonths\": 1,\n  \"price\": 1.00,\n  \"city\": \"Nowhere\",\n  \"province\": \"Nowhere\",\n  \"status\": \"ACTIVE\"\n}", "options": { "raw": { "language": "json" }}},
+            "url": "{{base_url}}/api/v1/pets/{{created_pet_id}}",
+            "description": "The seed seller's token is valid but they do not own this pet. Proves the ownership check in PetService."
+          }
+        },
+        {
+          "name": "DELETE pet — 403 wrong owner",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('403 Forbidden', () => pm.response.to.have.status(403));"
+          ]}}],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{seed_token}}" }],
+            "url": "{{base_url}}/api/v1/pets/{{created_pet_id}}"
+          }
+        },
+        {
+          "name": "DELETE pet — 204 by owner (soft-delete)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('204 No Content', () => pm.response.to.have.status(204));",
+            "pm.test('empty body', () => pm.expect(pm.response.text()).to.eql(''));"
+          ]}}],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/pets/{{created_pet_id}}"
+          }
+        },
+        {
+          "name": "GET deleted pet — 404 (now HIDDEN, invisible to public)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('404 after soft-delete', () => pm.response.to.have.status(404));",
+            "pm.test('title = Pet not found', () => pm.expect(pm.response.json().title).to.eql('Pet not found'));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/pets/{{created_pet_id}}" }
+        },
+        {
+          "name": "GET my pets — deleted pet still shows (HIDDEN, owner can see it)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const b = pm.response.json();",
+            "const deleted = b.content.find(p => p.id === pm.collectionVariables.get('created_pet_id'));",
+            "pm.test('deleted pet appears in My Listings with HIDDEN status', () => {",
+            "    pm.expect(deleted).to.not.be.undefined;",
+            "    pm.expect(deleted.status).to.eql('HIDDEN');",
+            "});"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/me/pets"
           }
         }
       ]

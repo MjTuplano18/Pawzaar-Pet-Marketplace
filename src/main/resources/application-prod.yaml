@@ -1,0 +1,24 @@
+# ── Production profile ────────────────────────────────────────────────────────
+# All secrets must come from environment variables. No fallbacks here.
+# Set on your host (Render / Railway / Docker):
+#   DATABASE_URL, DATABASE_USERNAME, DATABASE_PASSWORD, JWT_SECRET
+
+spring:
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+    hikari:
+      # Free-tier databases (Supabase, Neon, Render) cap connections at 20-60.
+      # Keep pool small: total = instances × pool-size must stay under the cap.
+      maximum-pool-size: 5
+      minimum-idle: 2
+
+  jpa:
+    show-sql: false
+
+pawzaar:
+  jwt:
+    # Injected by the host's secret store. Must be at least 256-bit Base64.
+    secret: ${JWT_SECRET}
+    access-token-validity-minutes: ${JWT_VALIDITY_MINUTES:30}

@@ -1,4 +1,4 @@
-# Local PostgreSQL 17 for development.
+# Local PostgreSQL 17 + pgAdmin 4 for development.
 # Host port 5433 -> container port 5432 (5432 is usually taken by a local Postgres install).
 # Credentials here must match spring.datasource.* in src/main/resources/application.yaml.
 services:
@@ -14,5 +14,20 @@ services:
     volumes:
       - pawzaar-data:/var/lib/postgresql/data
 
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pawzaar-pgadmin
+    environment:
+      # Login credentials for the pgAdmin web UI (not the database itself).
+      PGADMIN_DEFAULT_EMAIL: "admin@pawzaar.dev"
+      PGADMIN_DEFAULT_PASSWORD: "admin"
+    ports:
+      - "5050:80"   # open http://localhost:5050 in your browser
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    depends_on:
+      - db
+
 volumes:
   pawzaar-data:
+  pgadmin-data:

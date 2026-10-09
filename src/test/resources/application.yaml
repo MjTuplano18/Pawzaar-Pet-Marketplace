@@ -1,0 +1,21 @@
+# Test-only overrides. Applied to every test that loads a Spring context.
+# Values here are throwaway; they must never be used outside test scope.
+
+spring:
+  # DataJpaTest replaces the datasource with a test DB, but WebMvcTest slices
+  # do not start a datasource at all - this block is only used by SpringBootTest.
+  datasource:
+    url: jdbc:postgresql://localhost:5433/pawzaar
+    username: pawzaar
+    password: pawzaar_dev
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+
+pawzaar:
+  jwt:
+    # Throwaway 256-bit Base64 key used only in tests. Never deploy this value.
+    secret: dGVzdC1vbmx5LXNlY3JldC1rZXktZG8tbm90LXVzZS1pbi1wcm9kdWN0aW9uLTAwMQ==
+    access-token-validity-minutes: 30

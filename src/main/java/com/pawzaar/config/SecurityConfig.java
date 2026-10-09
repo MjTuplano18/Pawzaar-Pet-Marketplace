@@ -53,17 +53,28 @@ public class SecurityConfig {
         http.authorizeHttpRequests(auth -> auth
                 // Public: liveness check.
                 .requestMatchers("/api/v1/health").permitAll()
+                // Public: Actuator health endpoints, for the hosting platform's health check.
+                // The app-wide rule is "everything must be authenticated", so health probes must
+                // be whitelisted explicitly - otherwise the platform sees 401 and marks us down.
+                // (Only health/info are exposed; see management.* in application.yaml.)
+                .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                 // MUST be public: when MVC raises an error (400 bad body, 405 wrong method,
                 // 415 bad content-type...) it dispatches to /error. If security blocked that,
                 // the real status would be replaced by a useless 403 with no body.
                 .requestMatchers("/error").permitAll()
+                // Swagger UI and OpenAPI spec (springdoc-openapi).
+                .requestMatchers("/swagger-ui/**", "/swagger-ui.html",
+                                 "/v3/api-docs/**", "/v3/api-docs").permitAll()
                 // Public: BROWSING pets - but only HTTP GET (read-only).
+                // POST/PUT/DELETE /api/v1/pets and GET /api/v1/me/pets fall through to anyRequest().authenticated().
                 .requestMatchers(HttpMethod.GET, "/api/v1/pets", "/api/v1/pets/**").permitAll()
                 // Auth must be PUBLIC: you cannot log in if logging in requires a token.
+                // NOTE: /auth/refresh is intentionally NOT listed yet - the endpoint does not
+                // exist. Whitelisting a route with no handler only produces a misleading 404.
+                // Add it back together with the refresh-token feature (see V4's refresh_tokens table).
                 .requestMatchers(HttpMethod.POST,
                         "/api/v1/auth/register",
-                        "/api/v1/auth/login",
-                        "/api/v1/auth/refresh").permitAll()
+                        "/api/v1/auth/login").permitAll()
                 // Everything else (any method, any other URL): must be authenticated.
                 .anyRequest().authenticated())
 

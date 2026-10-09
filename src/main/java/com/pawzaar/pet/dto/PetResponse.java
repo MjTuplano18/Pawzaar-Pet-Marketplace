@@ -19,41 +19,19 @@ import java.util.UUID; // Used for unique identifiers such as pet and seller IDs
  */
 public record PetResponse(
 
-        // Unique identifier of the pet.
         UUID id,
-
-        // Unique identifier of the seller who listed the pet.
         UUID sellerId,
-
-        // Title displayed for the pet listing.
         String title,
-
-        // Species of the pet, such as DOG or CAT.
         Species species,
-
-        // Breed of the pet.
         String breed,
-
-        // Age of the pet in months.
         int ageMonths,
-
-        // Asking price of the pet.
         BigDecimal price,
-
-        // Detailed description of the pet.
         String description,
-
-        // City where the pet is located.
         String city,
-
-        // Province where the pet is located.
         String province,
-
-        // Current status of the pet listing.
+        String sex,
         PetStatus status,
+        Instant createdAt,
+        Instant updatedAt
 
-        // Date and time when the listing was created.
-        Instant createdAt
-
-) {
-}
+) {}

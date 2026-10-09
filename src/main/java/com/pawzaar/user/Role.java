@@ -20,5 +20,6 @@ package com.pawzaar.user;
  */
 public enum Role {
     USER,     // the default for every new account (see User.register -> role defaults here)
-    SELLER    // granted when a user posts their first pet; the V3 seed row already uses it
+    SELLER,   // granted when a user posts their first pet; the V3 seed row already uses it
+    ADMIN     // can hide listings, ban users, and manage reports
 }

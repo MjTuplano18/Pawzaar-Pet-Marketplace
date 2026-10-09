@@ -78,4 +78,25 @@ class PetRepositoryTest {
         // The Optional is empty -> in the service this becomes your 404.
         assertTrue(petRepository.findById(UUID.randomUUID()).isEmpty());
     }
+
+    @Test
+    void findBySellerIdReturnsAllListingsForThatSeller() {
+        // All 3 seed pets belong to seller 11111111-1111-1111-1111-111111111111.
+        UUID seedSellerId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+
+        Page<Pet> myPets = petRepository.findBySellerId(
+                seedSellerId, PageRequest.of(0, 10));
+
+        assertEquals(3, myPets.getTotalElements());
+        assertTrue(myPets.getContent().stream()
+                .allMatch(p -> seedSellerId.equals(p.getSellerId())));
+    }
+
+    @Test
+    void findBySellerIdReturnsEmptyForUnknownSeller() {
+        Page<Pet> myPets = petRepository.findBySellerId(
+                UUID.randomUUID(), PageRequest.of(0, 10));
+
+        assertEquals(0, myPets.getTotalElements());
+    }
 }

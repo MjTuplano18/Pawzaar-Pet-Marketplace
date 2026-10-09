@@ -1,0 +1,25 @@
+# ── Dev profile ───────────────────────────────────────────────────────────────
+# Activated automatically when you run the app with -Dspring.profiles.active=dev
+# (IntelliJ: Run Configuration → Active profiles → dev).
+# Never commit real secrets; the values below are dev-only throwaways.
+
+spring:
+  datasource:
+    # Matches docker-compose.yaml: host port 5433 -> container port 5432.
+    url: jdbc:postgresql://localhost:5433/pawzaar
+    username: pawzaar
+    password: pawzaar_dev
+
+  # Show the SQL Hibernate sends to Postgres - invaluable for spotting N+1 queries.
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+pawzaar:
+  jwt:
+    # DEV-ONLY throwaway secret (256-bit Base64). Change before any deployment.
+    # Generate a new one: openssl rand -base64 32
+    secret: cGF3emFhci1kZXYtb25seS1zZWNyZXQta2V5LWNoYW5nZS1tZS1pbi1wcm9kdWN0aW9uLTAxMjM0NTY3ODk=
+    access-token-validity-minutes: 30

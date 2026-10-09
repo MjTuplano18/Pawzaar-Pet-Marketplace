@@ -119,7 +119,7 @@ PawzaarApiApplication.main()
    │                            starter-webmvc   → embedded Tomcat + Jackson
    │                            starter-data-jpa → Hibernate + HikariCP connection pool
    │                            starter-security → the security filter chain
-   │                            starter-flyway   → run V1, V2, V3 migrations
+   │                            starter-flyway   → run pending migrations (V1 … V5)
    │
    ├─ ③ SCHEMA VALIDATION       ddl-auto: validate → "does Pet match the pets table?"
    │                            (any mismatch → startup FAILS loudly)
@@ -267,8 +267,23 @@ exception type. Controllers and services never write error responses; they just 
 | Exception | Status | Title |
 |---|---|---|
 | `PetNotFoundException` | 404 | `Pet not found` |
+| `ForbiddenPetAccessException` | 403 | `Access denied` |
+| `InvalidCredentialsException` | 401 | `Invalid credentials` |
 | `EmailAlreadyRegisteredException` | 409 | `Email already registered` |
+| `InvalidPetStatusException` (seller set an admin-only status) | 400 | `Invalid listing status` |
 | `MethodArgumentNotValidException` (`@Valid` failure) | 400 | `Validation failed` + `errors[]` |
+| `MethodArgumentTypeMismatchException` (bad UUID / param) | 400 | `Invalid request parameter` |
+| `HttpMessageNotReadableException` (malformed JSON) | 400 | `Malformed request body` |
+| `HttpRequestMethodNotSupportedException` (wrong verb) | 405 | `Method not allowed` |
+| `HttpMediaTypeNotSupportedException` (wrong content-type) | 415 | `Unsupported media type` |
+| `OptimisticLockingFailureException` (`@Version` race) | 409 | `Concurrent modification` |
+
+The four handlers for `MethodArgumentTypeMismatchException`, `HttpMessageNotReadableException`,
+`HttpRequestMethodNotSupportedException` and `HttpMediaTypeNotSupportedException` cover errors
+Spring raises *before* any controller runs (bad path variable, unparseable body, wrong method,
+wrong content-type). Without them those responses fall back to Spring's default `/error` page — a
+different JSON shape and `application/json` instead of `application/problem+json`. They are what
+makes "one error format" actually true.
 
 ### 6.4 `config/SecurityConfig`
 
@@ -279,9 +294,12 @@ http.csrf(csrf -> csrf.disable());                    // no cookies → no CSRF
 http.sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 http.authorizeHttpRequests(auth -> auth
         .requestMatchers("/api/v1/health").permitAll()
+        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
         .requestMatchers("/error").permitAll()
+        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
         .requestMatchers(HttpMethod.GET, "/api/v1/pets", "/api/v1/pets/**").permitAll()
-        .requestMatchers(HttpMethod.POST, "/api/v1/auth/**").permitAll()
+        .requestMatchers(HttpMethod.POST,
+                "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
         .anyRequest().authenticated());                // deny-by-default
 return http.build();
 ```
@@ -407,12 +425,17 @@ public Page<PetSummary> listPets(@RequestParam(defaultValue = "0") int page,
 Why the cap? Without it, `?size=1000000` makes the database return a million rows and ships
 megabytes of JSON. Unbounded pagination is a classic denial-of-service vector.
 
-### 6.12 `pet/PetNotFoundException`, `user/EmailAlreadyRegisteredException`
+### 6.12 Domain exceptions
 
-Domain exceptions: they describe *what went wrong* in business language and know nothing about
-HTTP. `GlobalExceptionHandler` decides how each one becomes a status code. Extending
-`RuntimeException` means callers aren't forced to write `try/catch` and transactions roll back
-automatically.
+`PetNotFoundException`, `ForbiddenPetAccessException`, `InvalidPetStatusException`,
+`EmailAlreadyRegisteredException`, `InvalidCredentialsException`: they describe *what went wrong*
+in business language and know nothing about HTTP. `GlobalExceptionHandler` decides how each one
+becomes a status code. Extending `RuntimeException` means callers aren't forced to write
+`try/catch` and transactions roll back automatically.
+
+* `InvalidPetStatusException` encodes an **authorization** rule ("only an admin may set
+  `PENDING_REVIEW`"). It is thrown from the service — the layer every caller path must pass
+  through — not the controller, so a new endpoint can't accidentally bypass it.
 
 ### 6.13 `user/User` + `user/Role`
 
@@ -586,8 +609,9 @@ ProblemDetail  →  application/problem+json
 | `401` | *who* are you? credentials missing or invalid | protected route without a token; wrong password |
 | `403` | we know who you are, but you may not | `POST /pets` while anonymous |
 | `404` | the thing doesn't exist | unknown pet id |
-| `405` | wrong HTTP method for that URL | `POST /api/v1/health` |
-| `409` | valid request, clashes with existing state | email already registered |
+| `405` | wrong HTTP method for that URL | `PATCH /api/v1/pets` |
+| `409` | valid request, clashes with existing state | email already registered; concurrent edit caught by `@Version` |
+| `415` | body has an unsupported content-type | `text/plain` instead of `application/json` |
 | `500` | our bug | NPE, failed SQL |
 
 > **403 vs 401:** since Step 6.3 a real authentication mechanism exists (a JWT resource server),
@@ -610,10 +634,16 @@ ProblemDetail  →  application/problem+json
 | Rule | Effect |
 |---|---|
 | `permitAll("/api/v1/health")` | liveness probe is public |
+| `permitAll("/actuator/health", "/actuator/health/**")` | host health checks work (only `health` is exposed) |
 | `permitAll("/error")` | real error statuses stay visible |
+| `permitAll("/swagger-ui/**", "/v3/api-docs/**")` | interactive API docs |
 | `permitAll(GET, "/api/v1/pets", "/api/v1/pets/**")` | anyone can **browse** |
-| `permitAll(POST, "/api/v1/auth/**")` | you must be able to register without a token |
+| `permitAll(POST, "/api/v1/auth/register", "/api/v1/auth/login")` | you must be able to register/log in without a token |
 | `anyRequest().authenticated()` | everything else needs credentials |
+
+> **Not listed: `/api/v1/auth/refresh`.** The endpoint does not exist yet, so whitelisting it would
+> only produce a misleading 404. Re-add it together with the refresh-token feature (the
+> `refresh_tokens` table from `V4` is already in place).
 
 Note the **`HttpMethod.GET`**: anonymous users may *look* at pets, but `POST /api/v1/pets`
 (once it exists) stays locked. Browsing is public; acting is not.
@@ -667,14 +697,19 @@ Indexes on `pets`: `(status, created_at DESC)`, `(species, breed)`, `(province, 
 | `V1__init.sql` | enabled the `pg_trgm` extension (fuzzy text search) |
 | `V2__create_users_and_pets.sql` | created both tables + indexes |
 | `V3__seed_sample_pets.sql` | 1 demo seller + 3 demo pets |
+| `V4__add_sex_updated_at_refresh_tokens.sql` | added `sex`, `updated_at`, `version` (optimistic locking) to `pets`; created `refresh_tokens` (reserved for the future refresh feature) |
+| `V5__fix_seed_user_password.sql` | gave the V3 seed seller a real BCrypt hash (V3 had stored a placeholder, so it could never log in) |
 
 **Rules:**
 
-* ✅ Add new migrations as `V4__….sql`, `V5__….sql`, …
+* ✅ Add new migrations as `V4__….sql`, `V5__….sql`, … (append-only).
 * ❌ **Never edit a migration that already ran.** Flyway stores a checksum of each file; changing
-  it makes startup fail with `Migration checksum mismatch`.
+  it makes startup fail with `Migration checksum mismatch`. This bit us once: `V3` was edited
+  during development; the file was restored and the correction moved into `V5`. If you ever do
+  edit one accidentally, `Flyway.repair()` realigns the stored checksum — but the *data* still
+  reflects the original migration, so an append-only fix is still required.
 * Flyway runs pending migrations automatically at startup (you'll see `Migrating schema "public"
-  to version "4 - …"`).
+  to version "5 - fix seed user password"`).
 
 ### Two JPA settings worth knowing (`application.yaml`)
 
@@ -701,17 +736,17 @@ Controller  →  returns PetResponse (DTO)     ← entities never reach here
 
 | Test | Boots | Database? | What it proves |
 |---|---|---|---|
-| `PetControllerTest` (`@WebMvcTest`) | web layer only | ❌ (service is mocked) | status codes, JSON shape, 404 problem format, security whitelist |
+| `PetControllerTest` (`@WebMvcTest`) | web layer only | ❌ (service is mocked) | status codes, JSON shape, 404/bad-UUID/malformed-JSON all in `ProblemDetail` format, security whitelist |
 | `PetRepositoryTest` (`@DataJpaTest`) | JPA layer | ✅ (real Docker Postgres, rolled back after each test) | queries, pagination counts, `Optional` behaviour, status filtering |
-| `PetServiceTest` (plain Mockito) | nothing (no Spring) | ❌ repository is a mock | business rules: the service really asks for `ACTIVE` pets |
+| `PetServiceTest` (plain Mockito) | nothing (no Spring) | ❌ repository is a mock | business rules: `ACTIVE`-only listing, ownership, admin-only status rejected |
 | `AuthServiceTest` (plain Mockito, real BCrypt) | nothing | ❌ repository is a mock | login rules: correct password, wrong password, unknown email, legacy hashes, email normalisation |
 | `AuthControllerTest` (`@WebMvcTest`) | web layer | ❌ (service mocked) | login is public, returns a Bearer token, 401 problem detail, 400 validation |
 | `PawzaarApiApplicationTests` (`@SpringBootTest`) | everything | ✅ | the whole context starts |
 
-Current total: **20 tests**, all green with `mvn test`.
+Current total: **41 tests**, all green with `mvn test`.
 
 ```bash
-.\mvnw.cmd test                                            # all 8 tests
+.\mvnw.cmd test                                            # all tests
 .\mvnw.cmd test "-Dtest=PetControllerTest"                 # one class
 .\mvnw.cmd test "-Dtest=PetRepositoryTest#findByIdWithRandomUuidIsEmpty"   # one method
 ```
@@ -787,6 +822,7 @@ Worth remembering, because each cost real time:
 | **Spring Security 7 API changes** | `DelegatingPasswordEncoder` has no 3-arg constructor with a fallback encoder any more | check the real class with `javap` before trusting an older example |
 | **IntelliJ green, Maven red** | the IDE does its own Lombok processing | trust `mvn test`, not only the IDE. |
 | **Repeated `maven.compiler.proc` flag eaten** | `-D...` without quotes in PowerShell | quote `-D` arguments: `"-Dmaven.compiler.proc=full"`. |
+| **Editing an applied Flyway migration** | the working-tree `V3` no longer matched the committed one, yet the DB still held the old seed row | migrations are append-only: fix data with a new `V…` file. `Flyway.repair()` only realigns the stored checksum — it does **not** change data. |
 
 ---
 
@@ -874,10 +910,11 @@ imports.
 | 5 | Read-only pet endpoints, error format, tests, Postman, git | ✅ |
 | 6.1 | `User` entity, `Role`, `UserRepository` | ✅ |
 | 6.2 | Registration, BCrypt, validation, 409 | ✅ |
-| 6.3 | **Token decision (JWT) + `POST /api/v1/auth/login`** | ✅ done |
-| 6.4 | Token verification wired in (403 → 401 confirmed) | ✅ done |
-| 7 | Seller actions: `POST/PATCH/DELETE /pets` with ownership authorization, `GET /pets/mine` | ⏳ |
-| 8 | Portfolio polish: GitHub Actions CI, env-var secrets, OpenAPI docs, Dockerfile | ⏳ |
+| 6.3 | **Token decision (JWT) + `POST /api/v1/auth/login`** | ✅ |
+| 6.4 | Token verification wired in (403 → 401 confirmed) | ✅ |
+| 6.5 | Review pass: append-only `V5` seed fix, admin-only status guard, full `ProblemDetail` coverage, actuator health | ✅ |
+| 7 | Seller actions: `POST/PUT/DELETE /pets` with ownership authorization, `GET /me/pets` | ✅ (PUT, not PATCH) |
+| 8 | Portfolio polish: OpenAPI ✅ and `run-dev.ps1` ✅; GitHub Actions CI, `README`, Dockerfile, strict CORS, refresh tokens | ⏳ |
 
 ---
 

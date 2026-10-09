@@ -2,14 +2,6 @@ spring:
   application:
     name: pawzaar-api
 
-  # HikariCP connection pool (Spring Boot's default) opens real PostgreSQL connections
-  # to the Docker container from docker-compose.yaml, which maps host port 5433
-  # to the container's 5432.
-  datasource:
-    url: jdbc:postgresql://localhost:5433/pawzaar
-    username: pawzaar
-    password: pawzaar_dev
-
   jpa:
     # Entities are only usable INSIDE a transaction - the service layer must open one
     # (@Transactional). Prevents the classic "no session" / lazy-load-outside-tx bugs.
@@ -22,10 +14,22 @@ spring:
 # ── Pawzaar's own settings ────────────────────────────────────────────────────
 pawzaar:
   jwt:
-    # 12-FACTOR CONFIG: the value comes from the JWT_SECRET environment variable in
-    # production; the literal below is a DEV-ONLY fallback so the app runs out of the box.
+    # 12-FACTOR CONFIG: the value comes from the JWT_SECRET environment variable.
     # Base64-encoded, and HS256 requires at least 256 bits (32 bytes) of key material.
-    secret: ${JWT_SECRET:cGF3emFhci1kZXYtb25seS1zZWNyZXQta2V5LWNoYW5nZS1tZS1pbi1wcm9kdWN0aW9uLTAxMjM0NTY3ODk=}
-    # How long a freshly issued token stays valid. Short-lived access tokens are the
-    # industry norm (15-60 min); a real system would add refresh tokens for longer sessions.
-    access-token-validity-minutes: 30
+    secret: ${JWT_SECRET}
+    access-token-validity-minutes: ${JWT_VALIDITY_MINUTES:30}
+
+# ── Actuator: health probes for the hosting platform / load balancer ──────────
+management:
+  endpoints:
+    web:
+      exposure:
+        # Expose ONLY health over HTTP. Never expose env, beans, heapdump, mappings, ...
+        include: health
+  endpoint:
+    health:
+      # Adds Kubernetes-style /actuator/health/liveness and /actuator/health/readiness.
+      probes:
+        enabled: true
+      # The health route is public, so never leak database/disk details to anonymous callers.
+      show-details: never

@@ -22,4 +22,7 @@ public interface PetRepository extends JpaRepository<Pet, UUID> {
     Page<Pet> findByStatus(PetStatus status, Pageable pageable);
 
     Optional<Pet> findByIdAndStatus(UUID id, PetStatus status);
+
+    // "My Listings" - all statuses for the owner's dashboard
+    Page<Pet> findBySellerId(UUID sellerId, Pageable pageable);
 }

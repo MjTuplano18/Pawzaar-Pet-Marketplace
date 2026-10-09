@@ -8,7 +8,9 @@ import jakarta.persistence.GeneratedValue; // Configures automatic ID generation
 import jakarta.persistence.GenerationType; // Defines the ID generation strategy.
 import jakarta.persistence.Id; // Marks the primary key of the entity.
 import jakarta.persistence.PrePersist; // Runs a method before a new entity is inserted.
+import jakarta.persistence.PreUpdate; // Runs a method before an entity is updated.
 import jakarta.persistence.Table; // Specifies the database table name.
+import jakarta.persistence.Version; // Marks the optimistic-locking version field.
 
 import lombok.AccessLevel; // Provides access-level options for Lombok.
 import lombok.Getter; // Generates getter methods automatically.
@@ -114,9 +116,57 @@ public class Pet {
     private Instant createdAt;
 
 
+    // Automatically updated on every flush; used for cache validation.
+    @Column(name = "updated_at", nullable = false)
+    private Instant updatedAt;
+
+
+    // Sex of the pet (optional).
+    @Setter
+    @Column(length = 10)
+    private String sex;
+
+
+    // Optimistic-locking version: Hibernate increments this on every UPDATE and rejects
+    // a stale write with OptimisticLockException (-> 409) instead of silently overwriting.
+    @Version
+    @Column(nullable = false)
+    private long version;
+
+
+    /**
+     * The only way to create a new Pet listing. Keeps construction rules in one place:
+     * sellerId, title, species, city and province are required; everything else may be null.
+     */
+    public static Pet create(UUID sellerId, String title, Species species,
+                             String breed, int ageMonths, BigDecimal price,
+                             String description, String city, String province, String sex) {
+        Pet pet = new Pet();
+        pet.sellerId = sellerId;
+        pet.title    = title;
+        pet.species  = species;
+        pet.breed    = breed;
+        pet.ageMonths = ageMonths;
+        pet.price    = price;
+        pet.description = description;
+        pet.city     = city;
+        pet.province = province;
+        pet.sex      = sex;
+        return pet;
+    }
+
+
     // Automatically sets the creation timestamp before inserting a new pet.
     @PrePersist
     void onCreate() {
-        this.createdAt = Instant.now();
+        Instant now = Instant.now();
+        this.createdAt = now;
+        this.updatedAt = now;
+    }
+
+    // Automatically refreshes updatedAt on every UPDATE.
+    @PreUpdate
+    void onUpdate() {
+        this.updatedAt = Instant.now();
     }
 }
