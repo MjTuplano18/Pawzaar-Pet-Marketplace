@@ -16,6 +16,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Locally stored uploads (dev only; a real deployment uses object storage)
+uploads/
+
 # Local environment overrides - may contain real secrets, never commit
 .env
 .env.*
