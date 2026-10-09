@@ -2,6 +2,7 @@ package com.pawzaar.pet.service;
 
 import com.pawzaar.pet.Pet; // Represents the pet entity stored in the database.
 import com.pawzaar.pet.PetNotFoundException;
+import com.pawzaar.pet.PetStatus;
 import com.pawzaar.pet.dto.PetResponse; // DTO used when returning one pet's full details.
 import com.pawzaar.pet.dto.PetSummary; // DTO used when returning pet listing summaries.
 import com.pawzaar.pet.repository.PetRepository; // Handles database operations for pets.
@@ -41,14 +42,15 @@ public class PetService {
      */
     @Transactional(readOnly = true)
     public Page<PetSummary> listPets(Pageable pageable) {
-        return petRepository.findAll(pageable).map(PetService::toSummary);
+        return petRepository.findByStatus(PetStatus.ACTIVE, pageable)
+                .map(PetService::toSummary);
     }
 
     // The transaction closes when this method returns; the Pet entity becomes
     // detached, and only the DTO leaves this layer.
     @Transactional(readOnly = true)
     public PetResponse getPet(UUID id) {
-        Pet pet = petRepository.findById(id)
+        Pet pet = petRepository.findByIdAndStatus(id,PetStatus.ACTIVE)
                 .orElseThrow(() -> new PetNotFoundException(id));   // empty Optional -> exception
         return toResponse(pet);
     }

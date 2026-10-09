@@ -7,12 +7,11 @@ import org.springframework.context.annotation.Configuration;
 // Spring calls the method ONCE and keeps the result in its container.
 import org.springframework.context.annotation.Bean;
 
-// The CONCRETE hashing implementation (BCrypt). We only mention it here, in one place.
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-
 // The INTERFACE we expose to the rest of the app. Injecting this instead of the class above
 // means we can swap BCrypt for Argon2 later by editing only this file.
+import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
+
 
 /**
  * One password-hashing strategy for the whole application, available for injection anywhere.
@@ -36,6 +35,6 @@ public class PasswordEncoderConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         // Default strength 10 = 2^10 key-expansion rounds (~100ms). Higher = slower + safer.
-        return new BCryptPasswordEncoder();
+        return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 }

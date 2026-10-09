@@ -43,7 +43,7 @@ public class Pet {
     // ID of the user who owns or created the pet listing.
     // Kept as a UUID for now; this can become a relationship
     // with a User entity when the seller feature is implemented.
-    @Setter
+
     @Column(name = "seller_id", nullable = false)
     private UUID sellerId;
 
@@ -109,7 +109,7 @@ public class Pet {
 
     // Date and time when the pet listing was created.
     // updatable = false prevents this value from being changed later.
-    @Setter
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 

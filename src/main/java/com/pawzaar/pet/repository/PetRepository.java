@@ -3,6 +3,10 @@ package com.pawzaar.pet.repository;
 import com.pawzaar.pet.Pet;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.UUID;
+import com.pawzaar.pet.PetStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import java.util.Optional;
 
 /**
  * Data layer of the pet feature. On startup Spring Data reads the type arguments
@@ -14,4 +18,8 @@ import java.util.UUID;
  * save(...), deleteById(...), count()...
  */
 public interface PetRepository extends JpaRepository<Pet, UUID> {
+
+    Page<Pet> findByStatus(PetStatus status, Pageable pageable);
+
+    Optional<Pet> findByIdAndStatus(UUID id, PetStatus status);
 }

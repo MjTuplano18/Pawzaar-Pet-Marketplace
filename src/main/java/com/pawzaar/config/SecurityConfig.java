@@ -55,7 +55,10 @@ public class SecurityConfig {
                 // Public: BROWSING pets - but only HTTP GET (read-only).
                 .requestMatchers(HttpMethod.GET, "/api/v1/pets", "/api/v1/pets/**").permitAll()
                 // Auth must be PUBLIC: you cannot log in if logging in requires a token.
-                .requestMatchers(HttpMethod.POST, "/api/v1/auth/**").permitAll()
+                .requestMatchers(HttpMethod.POST,
+                        "/api/v1/auth/register",
+                        "/api/v1/auth/login",
+                        "/api/v1/auth/refresh").permitAll()
                 // Everything else (any method, any other URL): must be authenticated.
                 .anyRequest().authenticated());
 
