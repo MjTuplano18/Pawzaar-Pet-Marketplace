@@ -7,10 +7,12 @@ import com.pawzaar.pet.Pet;
 import com.pawzaar.pet.PetNotFoundException;
 import com.pawzaar.pet.PetStatus;
 import com.pawzaar.pet.dto.PetCreateRequest;
+import com.pawzaar.pet.dto.PetFilter;
 import com.pawzaar.pet.dto.PetResponse;
 import com.pawzaar.pet.dto.PetSummary;
 import com.pawzaar.pet.dto.PetUpdateRequest;
 import com.pawzaar.pet.repository.PetRepository;
+import com.pawzaar.pet.repository.PetSpecifications;
 import com.pawzaar.user.Role;
 import com.pawzaar.user.User;
 import com.pawzaar.user.repository.UserRepository;
@@ -43,11 +45,11 @@ public class PetService {
 
     // ── READ ─────────────────────────────────────────────────────────────────────────────────
 
-    /** Paginated list of all ACTIVE listings - the public home/search feed. */
+    /** Paginated list of ACTIVE listings matching the optional filters - the public search feed. */
     @Transactional(readOnly = true)
-    public PagedResponse<PetSummary> listPets(Pageable pageable) {
+    public PagedResponse<PetSummary> listPets(PetFilter filter, Pageable pageable) {
         return PagedResponse.of(
-                petRepository.findByStatus(PetStatus.ACTIVE, pageable)
+                petRepository.findAll(PetSpecifications.activeMatching(filter), pageable)
                              .map(PetService::toSummary));
     }
 

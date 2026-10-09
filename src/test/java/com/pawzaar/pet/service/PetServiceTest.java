@@ -8,6 +8,7 @@ import com.pawzaar.pet.PetNotFoundException;
 import com.pawzaar.pet.PetStatus;
 import com.pawzaar.pet.Species;
 import com.pawzaar.pet.dto.PetCreateRequest;
+import com.pawzaar.pet.dto.PetFilter;
 import com.pawzaar.pet.dto.PetResponse;
 import com.pawzaar.pet.dto.PetSummary;
 import com.pawzaar.pet.dto.PetUpdateRequest;
@@ -24,6 +25,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -66,16 +68,16 @@ class PetServiceTest {
     // ── listPets ───────────────────────────────────────────────────────────────
 
     @Test
-    void listPetsOnlyAsksRepositoryForActivePets() {
+    void listPetsQueriesRepositoryWithActiveFilter() {
         PageRequest pageable = PageRequest.of(0, 20);
-        when(petRepository.findByStatus(eq(PetStatus.ACTIVE), any(Pageable.class)))
+        PetFilter filter = new PetFilter(Species.DOG, null, null, null, null, null, null, null);
+        when(petRepository.findAll(any(Specification.class), eq(pageable)))
                 .thenReturn(new PageImpl<>(List.of(activePet(OWNER_ID))));
 
-        PagedResponse<PetSummary> result = petService.listPets(pageable);
+        PagedResponse<PetSummary> result = petService.listPets(filter, pageable);
 
         assertEquals(1, result.content().size());
-        verify(petRepository).findByStatus(PetStatus.ACTIVE, pageable);
-        verify(petRepository, never()).findAll(any(Pageable.class));
+        verify(petRepository).findAll(any(Specification.class), eq(pageable));
     }
 
     // ── getPet ─────────────────────────────────────────────────────────────────

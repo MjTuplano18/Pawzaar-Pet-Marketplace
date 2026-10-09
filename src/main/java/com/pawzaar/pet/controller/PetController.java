@@ -1,7 +1,9 @@
 package com.pawzaar.pet.controller;
 
 import com.pawzaar.common.PagedResponse;
+import com.pawzaar.pet.Species;
 import com.pawzaar.pet.dto.PetCreateRequest;
+import com.pawzaar.pet.dto.PetFilter;
 import com.pawzaar.pet.dto.PetResponse;
 import com.pawzaar.pet.dto.PetSummary;
 import com.pawzaar.pet.dto.PetUpdateRequest;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.util.UUID;
 
@@ -61,20 +64,32 @@ public class PetController {
     // ── PUBLIC ENDPOINTS ─────────────────────────────────────────────────────────────────────
 
     /**
-     * Paginated list of ACTIVE listings.
-     * Example: GET /api/v1/pets?page=0&size=20
+     * Paginated list of ACTIVE listings, optionally filtered.
+     * Example: GET /api/v1/pets?page=0&size=20&species=DOG&maxPrice=10000
      */
     @GetMapping("/pets")
     public PagedResponse<PetSummary> listPets(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) Species species,
+            @RequestParam(required = false) String province,
+            @RequestParam(required = false) String city,
+            @RequestParam(required = false) String breed,
+            @RequestParam(required = false) BigDecimal minPrice,
+            @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(required = false) Integer minAgeMonths,
+            @RequestParam(required = false) Integer maxAgeMonths) {
 
         PageRequest pageable = PageRequest.of(
                 Math.max(page, 0),
                 Math.min(size, 50),
                 Sort.by(Sort.Direction.DESC, "createdAt"));
 
-        return petService.listPets(pageable);
+        PetFilter filter = new PetFilter(
+                species, province, city, breed,
+                minPrice, maxPrice, minAgeMonths, maxAgeMonths);
+
+        return petService.listPets(filter, pageable);
     }
 
     /**

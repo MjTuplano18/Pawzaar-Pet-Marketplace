@@ -9,12 +9,14 @@ import com.pawzaar.pet.PetNotFoundException;
 import com.pawzaar.pet.PetStatus;
 import com.pawzaar.pet.Species;
 import com.pawzaar.pet.dto.PetCreateRequest;
+import com.pawzaar.pet.dto.PetFilter;
 import com.pawzaar.pet.dto.PetResponse;
 import com.pawzaar.pet.dto.PetSummary;
 import com.pawzaar.pet.dto.PetUpdateRequest;
 import com.pawzaar.pet.service.PetService;
 import com.pawzaar.common.PagedResponse;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -30,6 +32,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -107,7 +110,7 @@ class PetControllerTest {
 
     @Test
     void listIsPublicAndReturnsPagedResponse() throws Exception {
-        when(petService.listPets(any()))
+        when(petService.listPets(any(), any()))
                 .thenReturn(new PagedResponse<>(List.of(fakeSummary()), 0, 20, 1, 1));
 
         mockMvc.perform(get("/api/v1/pets"))
@@ -115,6 +118,25 @@ class PetControllerTest {
                 .andExpect(jsonPath("$.content[0].title").value("Golden Retriever pup"))
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.page").value(0));
+    }
+
+    @Test
+    void listPassesQueryParametersToTheService() throws Exception {
+        when(petService.listPets(any(), any()))
+                .thenReturn(new PagedResponse<>(List.of(), 0, 20, 0, 0));
+
+        mockMvc.perform(get("/api/v1/pets")
+                        .param("species", "DOG")
+                        .param("province", "Bulacan")
+                        .param("maxPrice", "10000"))
+                .andExpect(status().isOk());
+
+        // The controller must map the query string into a PetFilter and hand it to the service.
+        ArgumentCaptor<PetFilter> captor = ArgumentCaptor.forClass(PetFilter.class);
+        verify(petService).listPets(captor.capture(), any());
+        assertEquals(Species.DOG, captor.getValue().species());
+        assertEquals("Bulacan", captor.getValue().province());
+        assertEquals(new BigDecimal("10000"), captor.getValue().maxPrice());
     }
 
     @Test
