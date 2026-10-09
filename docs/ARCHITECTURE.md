@@ -42,7 +42,7 @@ Currently implemented (through Step 10):
 | **Search & filtering** on `GET /pets` (optional filters + sort allowlist) | ✅ done (Step 10) |
 | Pet detail with a clean 404 (`GET /pets/{id}`) | ✅ done |
 | One consistent error format (RFC 9457) | ✅ done |
-| Automated tests (web slice + DB slice + unit) | ✅ 85 tests |
+| Automated tests (web slice + DB slice + unit) | ✅ 118 tests |
 | User registration with hashed passwords | ✅ done |
 | Login + JWT issuance, token verification on protected routes | ✅ done (Step 6.3) |
 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ done |
@@ -50,6 +50,7 @@ Currently implemented (through Step 10):
 | `USER` → `SELLER` promotion on first listing | ✅ done |
 | **Role-based authorization** via `@PreAuthorize` (seller-only writes) | ✅ done (Step 9) |
 | **Auth rate limiting** (per-IP token bucket → `429`) | ✅ done (Step 11) |
+| **Listing images**: owner upload, byte-level validation, public serve | ✅ done (Step 12) |
 | Strict CORS allowlist | ✅ done |
 | OpenAPI/Swagger UI, profiles, actuator health | ✅ done |
 | GitHub Actions CI, `README`, multi-stage Dockerfile | ✅ done |
@@ -127,7 +128,7 @@ PawzaarApiApplication.main()
    │                            starter-webmvc   → embedded Tomcat + Jackson
    │                            starter-data-jpa → Hibernate + HikariCP connection pool
    │                            starter-security → the security filter chain
-   │                            starter-flyway   → run pending migrations (V1 … V6)
+   │                            starter-flyway   → run pending migrations (V1 … V7)
    │
    ├─ ③ SCHEMA VALIDATION       ddl-auto: validate → "does Pet match the pets table?"
    │                            (any mismatch → startup FAILS loudly)
@@ -690,6 +691,41 @@ POST /auth/login  →  RateLimitFilter.tryConsume(ip)  →  allowed?  → contro
                                                        →  denied?   → 429 + Retry-After
 ```
 
+### 6.24 Listing images — storage, validation, and serving
+
+Images are the first feature where a request writes something *outside* the database. That two-sided
+write (a file on disk **and** a row) is exactly why it gets its own service rather than bloating
+`PetService` (code lives in `pet/image` and `pet/service/PetImageService`).
+
+```text
+POST /pets/{id}/images (multipart "file")
+  → PetController
+  → PetImageService.upload
+      ImageValidator.validate(file)   size cap, type allowlist, magic-byte sniff → ValidatedImage
+      ImageStorage.store(bytes)       random UUID + validated extension → storageKey
+      PetImageRepository.save(row)    key + content type + size + sort order
+  → 201 + Location: /pets/{id}/images/{imageId}
+```
+
+| Piece | Responsibility |
+|---|---|
+| `ImageValidator` | size cap, declared-type allowlist, and **magic-byte sniffing** — the `Content-Type` header is client-supplied, so the bytes must agree with it |
+| `ImageStorage` / `LocalImageStorage` | writes to a configured root under a server-generated key; refuses any key that escapes the root |
+| `PetImageRepository` | ordered images for a detail page; one batch query for a page's covers (no N+1); id lookups scoped to the owning pet |
+| `PetImageService` | ownership; appends new images; deletes row + file; hides a non-`ACTIVE` listing's images from non-owners |
+| `PetController` | upload (201 + `Location`), delete (204), and a public byte-streaming GET |
+
+Decisions worth defending in an interview:
+
+* **Validate the bytes, not the filename.** An attacker can name anything `photo.png`; only the first
+  bytes prove the format, and the declared type and sniffed type must match.
+* **Never expose the storage key.** Clients get an opaque image `id` and an API URL, so storage can
+  move to S3/CDN without a client change and cannot be probed for a filesystem path.
+* **Keep the two-sided write consistent.** If the row insert fails after the file is written, the file
+  is deleted immediately — otherwise it becomes an orphan the app can never reach.
+* **Cover image = sort order 0.** Cards need exactly one image, so the list endpoint fetches
+  `sort_order = 0` for the whole page in a single query.
+
 ---
 
 ## 7. Journey of one request (end to end)
@@ -868,6 +904,7 @@ its check. The controller keeps requests cheap; the service keeps them correct.
 users:  id, email(UNIQUE), password_hash, display_name, phone?, role, verified, created_at
 pets:   id, seller_id → users(id), title, species, breed?, age_months, price,
         description?, city, province, status, created_at
+pet_images: id, pet_id → pets(id), storage_key(UNIQUE), content_type, size_bytes, sort_order, created_at
 refresh_tokens: id, user_id → users(id), token_hash(UNIQUE), expires_at, revoked, created_at
 ```
 
@@ -875,6 +912,9 @@ Indexes on `pets`: `(status, created_at DESC)`, `(species, breed)`, `(province, 
 `(price)`, `(seller_id)`, a trigram index on `title`, and — added in Step 10 — `(age_months)`,
 `(city)`, and a GIN trigram index on `lower(breed)` for the case-insensitive breed search.
 `V2` already covered the other filter columns, so `V6` adds only what was genuinely missing.
+
+`pet_images` has one index, `(pet_id, sort_order)`, which serves both "a pet's images in order" and
+the batch cover lookup (`pet_id`, `0`) used by the list endpoint.
 
 ### Migrations
 
@@ -886,6 +926,7 @@ Indexes on `pets`: `(status, created_at DESC)`, `(species, breed)`, `(province, 
 | `V4__add_sex_updated_at_refresh_tokens.sql` | added `sex`, `updated_at`, `version` (optimistic locking) to `pets`; created `refresh_tokens` (now used by the refresh-token flow) |
 | `V5__fix_seed_user_password.sql` | gave the V3 seed seller a real BCrypt hash (V3 had stored a placeholder, so it could never log in) |
 | `V6__add_pet_search_indexes.sql` | added the search indexes the query patterns needed but `V2` lacked: `(age_months)`, `(city)`, and `gin(lower(breed) trgm)` |
+| `V7__create_pet_images.sql` | created `pet_images` (FK to `pets`, `ON DELETE CASCADE`) + an index on `(pet_id, sort_order)` |
 
 **Rules:**
 
@@ -896,7 +937,7 @@ Indexes on `pets`: `(status, created_at DESC)`, `(species, breed)`, `(province, 
   edit one accidentally, `Flyway.repair()` realigns the stored checksum — but the *data* still
   reflects the original migration, so an append-only fix is still required.
 * Flyway runs pending migrations automatically at startup (you'll see `Migrating schema "public"
-  to version "6 - add pet search indexes"`).
+  to version "7 - create pet images"`).
 
 ### Two JPA settings worth knowing (`application.yaml`)
 
@@ -923,7 +964,7 @@ Controller  →  returns PetResponse (DTO)     ← entities never reach here
 
 | Test | Boots | Database? | What it proves |
 |---|---|---|---|
-| `PetControllerTest` (`@WebMvcTest`) | web layer only | ❌ (service is mocked) | status codes, JSON shape, 404/bad-UUID/malformed-JSON all in `ProblemDetail` format, security whitelist, `@PreAuthorize` role rules (incl. the `403` body), query params → `PetFilter`, sort allowlist (`400` on bad input), paging caps |
+| `PetControllerTest` (`@WebMvcTest`) | web layer only | ❌ (service is mocked) | status codes, JSON shape, 404/bad-UUID/malformed-JSON all in `ProblemDetail` format, security whitelist, `@PreAuthorize` role rules (incl. the `403` body), query params → `PetFilter`, sort allowlist (`400` on bad input), paging caps, image upload/serve/delete (`201`/`204`/`415`/`404`) |
 | `PetRepositoryTest` (`@DataJpaTest`) | JPA layer | ✅ (real Docker Postgres, rolled back after each test) | queries, pagination counts, `Optional` behaviour, status filtering, **and the Specifications** (species/province/city/breed/price/age filters, AND-combination, never returning non-`ACTIVE`, sort) |
 | `PetServiceTest` (plain Mockito) | nothing (no Spring) | ❌ repository is a mock | business rules: `ACTIVE`-only listing, ownership, admin-only status rejected, `USER`→`SELLER` promotion |
 | `AuthServiceTest` (plain Mockito, real BCrypt) | nothing | ❌ repositories are mocks | login rules (correct/wrong/unknown password, legacy hashes, normalization) **and** refresh rotation/revocation + idempotent logout |
@@ -931,9 +972,13 @@ Controller  →  returns PetResponse (DTO)     ← entities never reach here
 | `InMemoryRateLimiterTest` (plain JUnit, fake clock) | nothing | ❌ | token-bucket behaviour: burst, deny, refill over time, per-key isolation, stale-bucket eviction, config validation |
 | `RateLimitFilterTest` (plain JUnit, mock servlet) | nothing | ❌ | only `POST` on configured paths is limited; a denial routes through the resolver and never reaches the chain |
 | `GlobalExceptionHandlerTest` (plain JUnit) | nothing | ❌ | `RateLimitExceededException` → `429` + `Retry-After` + `problem+json` title |
+| `ImageValidatorTest` (plain JUnit) | nothing | ❌ | size cap, type allowlist, and magic-byte sniffing (a renamed/lying `Content-Type` is rejected) |
+| `LocalImageStorageTest` (plain JUnit, `@TempDir`) | nothing | ❌ | round-trip, unique keys, delete, path-traversal rejection |
+| `PetImageRepositoryTest` (`@DataJpaTest`) | JPA layer | ✅ | ordered images, batch cover lookup, pet-scoped id lookup, `ON DELETE CASCADE` |
+| `PetImageServiceTest` (plain Mockito) | nothing | ❌ | owner-only upload/delete, file cleanup when the row write fails, hiding a non-`ACTIVE` listing's images |
 | `PawzaarApiApplicationTests` (`@SpringBootTest`) | everything | ✅ | the whole context starts |
 
-Current total: **85 tests**, all green with `mvn test`.
+Current total: **118 tests**, all green with `mvn test`.
 
 ```bash
 .\mvnw.cmd test                                            # all tests
@@ -1122,7 +1167,8 @@ imports.
 | 9 | Role-based authorization: `@EnableMethodSecurity` + `@PreAuthorize` on writes; `403` kept in `ProblemDetail` | ✅ |
 | 10 | Search & filtering: optional filters (`Specification`), sort allowlist, `V6` indexes, tests/docs/Postman | ✅ |
 | 11 | Rate limiting: token bucket, auth filter, 429 `problem+json`, tests/docs/Postman | ✅ |
-| 12 | Next up: image upload | ⏳ |
+| 12 | Listing images: storage abstraction, byte-level validation, upload/delete/serve, cover in lists | ✅ |
+| 13 | Next up: admin moderation & reporting | ⏳ |
 
 ---
 

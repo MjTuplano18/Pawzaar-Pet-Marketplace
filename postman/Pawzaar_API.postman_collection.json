@@ -443,7 +443,77 @@
       ]
     },
     {
-      "name": "06 Refresh & logout (run after 04 Login)",
+      "name": "06 Listing images (run after 04 Login)",
+      "description": "Uploads a cover image to a fresh listing, reads it back publicly, and deletes it. ATTACH a small JPEG/PNG/WebP file in the upload request's form-data (field name 'file'). Requires {{access_token}} from folder 04.",
+      "item": [
+        {
+          "name": "POST pet — create a listing for image tests (saves image_pet_id)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('image_pet_id', pm.response.json().id);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"title\": \"Image test pup\",\n  \"species\": \"DOG\",\n  \"breed\": \"Aspin\",\n  \"ageMonths\": 6,\n  \"price\": 1500.00,\n  \"description\": \"Listing created to demo image upload.\",\n  \"city\": \"Quezon City\",\n  \"province\": \"Metro Manila\",\n  \"sex\": \"MALE\"\n}", "options": { "raw": { "language": "json" }}},
+            "url": "{{base_url}}/api/v1/pets"
+          }
+        },
+        {
+          "name": "POST image — 201 upload (attach a JPEG/PNG/WebP file)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 (pick a file in the body when running)', () => pm.response.to.have.status(201));",
+            "if (pm.response.code === 201) {",
+            "  const b = pm.response.json();",
+            "  pm.test('url points at the image bytes', () => pm.expect(b.url).to.contain('/images/'));",
+            "  pm.collectionVariables.set('image_id', b.id);",
+            "  pm.collectionVariables.set('image_url', b.url);",
+            "}"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "body": { "mode": "formdata", "formdata": [
+              { "key": "file", "type": "file", "src": null }
+            ]},
+            "url": "{{base_url}}/api/v1/pets/{{image_pet_id}}/images"
+          },
+          "description": "The server validates the ACTUAL bytes, not just the Content-Type: an unsupported type answers 415 and an oversized file 413, both as problem+json."
+        },
+        {
+          "name": "GET image — 200 image/* (public, no token)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "pm.test('served as an image', () => pm.expect(pm.response.headers.get('Content-Type')).to.contain('image/'));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}{{image_url}}" }
+        },
+        {
+          "name": "GET pet detail — 200 with images[]",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "pm.test('images[] is present', () => pm.expect(pm.response.json().images).to.be.an('array'));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/pets/{{image_pet_id}}" }
+        },
+        {
+          "name": "DELETE image — 204 by owner",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('204', () => pm.response.to.have.status(204));"
+          ]}}],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": "{{base_url}}/api/v1/pets/{{image_pet_id}}/images/{{image_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 Refresh & logout (run after 04 Login)",
       "description": "Proves refresh-token rotation: the old token stops working the moment a new one is issued, and logout revokes a token. Requires {{refresh_token}} from folder 04.",
       "item": [
         {

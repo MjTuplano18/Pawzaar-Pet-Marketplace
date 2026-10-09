@@ -30,8 +30,11 @@ stateless JWT auth with refresh-token rotation, role-based authorization, automa
 - **One error format** — every error is an RFC 9457 `application/problem+json` response.
 - **Abuse protection** — the auth endpoints are rate limited per client IP (token bucket) and return
   **429** `problem+json` with a `Retry-After` header; spoofed `X-Forwarded-For` is ignored by default.
+- **Listing images** — owners upload JPEG/PNG/WebP photos, validated by declared type, size, **and
+  magic bytes**; the cover appears on cards, all images on the detail page, and the bytes stream back
+  with a cache header. Served from local disk behind an `ImageStorage` interface (S3/CDN-ready).
 - **Observability & docs** — Actuator health probes (liveness/readiness) and Swagger UI.
-- **Quality gates** — 85 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds and
+- **Quality gates** — 118 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds and
   tests every push; `.\verify-local.ps1` runs the same checks (plus a live smoke test) locally.
 
 ---
@@ -129,6 +132,9 @@ All routes are versioned under `/api/v1`.
 | `POST` | `/pets` | USER/SELLER | create a listing (201 + `Location`) |
 | `PUT` | `/pets/{id}` | SELLER (owner) | replace your listing |
 | `DELETE` | `/pets/{id}` | SELLER (owner) | soft-delete your listing (204) |
+| `POST` | `/pets/{id}/images` | USER/SELLER (owner) | upload an image (multipart, 201 + `Location`) |
+| `DELETE` | `/pets/{id}/images/{imageId}` | USER/SELLER (owner) | remove an image (204) |
+| `GET` | `/pets/{id}/images/{imageId}` | public | fetch image bytes (`image/*`) |
 | `GET` | `/me/pets` | bearer | your listings, any status |
 | `GET` | `/actuator/health` | public | readiness/liveness for the host |
 
@@ -148,8 +154,13 @@ and `minAgeMonths`/`maxAgeMonths` — plus `sort` (`createdAt`, `price`, `ageMon
 GET /api/v1/pets?species=DOG&maxPrice=15000&sort=price&order=asc
 ```
 
+Listing images (`POST /pets/{id}/images`, multipart field `file`) accept `image/jpeg`, `image/png`,
+and `image/webp` up to 5 MiB. The server inspects the actual bytes, not just the `Content-Type`
+header, and answers **400**/**413**/**415** `problem+json` on bad input. Images are streamed back from
+`GET /pets/{id}/images/{imageId}`.
+
 A ready-made [Postman collection](postman/Pawzaar_API.postman_collection.json) covers health, pets
-(including search filters), auth, and the login/refresh flow.
+(including search filters), auth, the login/refresh flow, and listing images.
 
 ---
 
@@ -179,6 +190,9 @@ src/main/java/com/pawzaar
 └── user/       feature slice: User, RefreshToken, DTOs, repositories, auth service/controller
 ```
 
+Inside `pet/`, the `image/` sub-package holds the storage abstraction (`ImageStorage` /
+`LocalImageStorage`), the byte-level validator, and the `PetImage` entity/repository.
+
 Package-by-feature with layer sub-packages. The layers only point downward:
 **Controller → Service (`@Transactional`) → Repository → PostgreSQL**. Entities never leave the
 service; controllers return DTO records only.
@@ -189,7 +203,7 @@ service; controllers return DTO records only.
 
 | Done | Next |
 |---|---|
-| Public browsing, seller CRUD, JWT + refresh tokens, role-based `@PreAuthorize`, search & filtering, auth rate limiting, CORS, tests, CI, Docker | Image upload |
+| Public browsing, seller CRUD, JWT + refresh tokens, role-based `@PreAuthorize`, search & filtering, auth rate limiting, listing images, CORS, tests, CI, Docker | Admin moderation & reporting |
 
 The full plan lives in
 [`Pawzaar — Spring Boot Learning & Build Roadmap.md`](<Pawzaar — Spring Boot Learning & Build Roadmap.md>).
