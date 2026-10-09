@@ -87,6 +87,56 @@
             "pm.test('400 not 500', () => pm.response.to.have.status(400));"
           ]}}],
           "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/pets/not-a-uuid" }
+        },
+        {
+          "name": "GET pets — filter species=DOG",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const pets = pm.response.json().content;",
+            "pm.test('at least one result', () => pm.expect(pets.length).to.be.at.least(1));",
+            "pm.test('every result is a DOG', () => pets.every(p => p.species === 'DOG'));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/pets?species=DOG&size=50" },
+          "description": "Exact-match filter. Requires the dev seed data (2 DOG listings)."
+        },
+        {
+          "name": "GET pets — filter breed contains (case-insensitive)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const pets = pm.response.json().content;",
+            "pm.test('partial, case-insensitive match returns results', () => pm.expect(pets.length).to.be.at.least(1));",
+            "pm.test('every breed contains the term', () => pets.every(p => (p.breed || '').toLowerCase().includes('retriever')));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/pets?breed=retriever" }
+        },
+        {
+          "name": "GET pets — filter price range",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const pets = pm.response.json().content;",
+            "pm.test('at least one result', () => pm.expect(pets.length).to.be.at.least(1));",
+            "pm.test('every price is within [10000, 16000]', () => pets.every(p => Number(p.price) >= 10000 && Number(p.price) <= 16000));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/pets?minPrice=10000&maxPrice=16000" }
+        },
+        {
+          "name": "GET pets — sort by price ascending",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200', () => pm.response.to.have.status(200));",
+            "const prices = pm.response.json().content.map(p => Number(p.price));",
+            "pm.test('results are ascending by price', () => prices.every((v, i) => i === 0 || prices[i - 1] <= v));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/pets?sort=price&order=asc&size=50" }
+        },
+        {
+          "name": "GET pets — 400 invalid sort (allowlist)",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('400 not 500', () => pm.response.to.have.status(400));",
+            "pm.test('problem+json', () => pm.response.to.have.header('Content-Type', /problem\\+json/));",
+            "pm.test('title = Invalid sort parameter', () => pm.expect(pm.response.json().title).to.eql('Invalid sort parameter'));"
+          ]}}],
+          "request": { "method": "GET", "header": [], "url": "{{base_url}}/api/v1/pets?sort=password" },
+          "description": "The sort field is an allowlist; anything else is rejected with 400 instead of an unhandled PropertyReferenceException (500)."
         }
       ]
     },

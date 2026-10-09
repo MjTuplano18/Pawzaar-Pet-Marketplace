@@ -19,6 +19,8 @@ stateless JWT auth with refresh-token rotation, role-based authorization, automa
 ## Features
 
 - **Public browsing** — paginated, `ACTIVE`-only listings (hidden and sold pets never leak).
+- **Search & filtering** — optional `species`, `province`, `city`, `breed` (case-insensitive
+  contains), price/age ranges, and a sort allowlist (`createdAt`, `price`, `ageMonths`).
 - **Seller flow** — create, replace, and soft-delete your own listings, with ownership enforced in
   the service layer. Posting your first listing promotes your account to `SELLER`.
 - **Authentication** — registration + login issuing a short-lived **access JWT** and a long-lived,
@@ -27,7 +29,7 @@ stateless JWT auth with refresh-token rotation, role-based authorization, automa
   listing, but only `SELLER`s may edit or delete, on top of a service-layer ownership check.
 - **One error format** — every error is an RFC 9457 `application/problem+json` response.
 - **Observability & docs** — Actuator health probes (liveness/readiness) and Swagger UI.
-- **Quality gates** — 56 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds and
+- **Quality gates** — 71 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds and
   tests every push; `.\verify-local.ps1` runs the same checks (plus a live smoke test) locally.
 
 ---
@@ -120,7 +122,7 @@ All routes are versioned under `/api/v1`.
 | `POST` | `/auth/login` | public | issue an access + refresh token pair |
 | `POST` | `/auth/refresh` | public\* | exchange a refresh token for a new pair (rotation) |
 | `POST` | `/auth/logout` | public\* | revoke a refresh token (204) |
-| `GET` | `/pets` | public | paginated `ACTIVE` listings |
+| `GET` | `/pets` | public | paginated, filterable, sortable `ACTIVE` listings |
 | `GET` | `/pets/{id}` | public | one `ACTIVE` listing (404 otherwise) |
 | `POST` | `/pets` | USER/SELLER | create a listing (201 + `Location`) |
 | `PUT` | `/pets/{id}` | SELLER (owner) | replace your listing |
@@ -132,8 +134,17 @@ All routes are versioned under `/api/v1`.
 
 List endpoints are paginated (`?page=0&size=20`) and the page size is hard-capped at **50**.
 
-A ready-made [Postman collection](postman/Pawzaar_API.postman_collection.json) covers health, pets,
-auth, and the login/refresh flow.
+`GET /pets` also accepts optional filters — `species=DOG` (exact), `province=Bulacan` and
+`city=Quezon%20City` (exact), `breed=retriever` (case-insensitive contains), `minPrice`/`maxPrice`,
+and `minAgeMonths`/`maxAgeMonths` — plus `sort` (`createdAt`, `price`, `ageMonths`) and `order`
+(`asc`/`desc`, default `desc`). An unknown sort field or direction returns **400** `problem+json`.
+
+```
+GET /api/v1/pets?species=DOG&maxPrice=15000&sort=price&order=asc
+```
+
+A ready-made [Postman collection](postman/Pawzaar_API.postman_collection.json) covers health, pets
+(including search filters), auth, and the login/refresh flow.
 
 ---
 
@@ -173,7 +184,7 @@ service; controllers return DTO records only.
 
 | Done | Next |
 |---|---|
-| Public browsing, seller CRUD, JWT + refresh tokens, role-based `@PreAuthorize`, CORS, tests, CI, Docker | Rate limiting, image upload, search filters |
+| Public browsing, seller CRUD, JWT + refresh tokens, role-based `@PreAuthorize`, search & filtering, CORS, tests, CI, Docker | Rate limiting, image upload |
 
 The full plan lives in
 [`Pawzaar — Spring Boot Learning & Build Roadmap.md`](<Pawzaar — Spring Boot Learning & Build Roadmap.md>).

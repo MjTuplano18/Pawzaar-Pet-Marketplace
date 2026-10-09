@@ -33,15 +33,16 @@ reader who knows core Java and OOP — but not Spring Boot — can follow along.
 
 A **Philippines-focused pet marketplace API**. Buyers browse pets for sale; sellers post listings.
 
-Currently implemented (through Step 9):
+Currently implemented (through Step 10):
 
 | Capability | Status |
 |---|---|
 | Liveness endpoint | ✅ done |
 | Public, paginated pet browsing (`GET /pets`) | ✅ done |
+| **Search & filtering** on `GET /pets` (optional filters + sort allowlist) | ✅ done (Step 10) |
 | Pet detail with a clean 404 (`GET /pets/{id}`) | ✅ done |
 | One consistent error format (RFC 9457) | ✅ done |
-| Automated tests (web slice + DB slice + unit) | ✅ 56 tests |
+| Automated tests (web slice + DB slice + unit) | ✅ 71 tests |
 | User registration with hashed passwords | ✅ done |
 | Login + JWT issuance, token verification on protected routes | ✅ done (Step 6.3) |
 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ done |
@@ -125,7 +126,7 @@ PawzaarApiApplication.main()
    │                            starter-webmvc   → embedded Tomcat + Jackson
    │                            starter-data-jpa → Hibernate + HikariCP connection pool
    │                            starter-security → the security filter chain
-   │                            starter-flyway   → run pending migrations (V1 … V5)
+   │                            starter-flyway   → run pending migrations (V1 … V6)
    │
    ├─ ③ SCHEMA VALIDATION       ddl-auto: validate → "does Pet match the pets table?"
    │                            (any mismatch → startup FAILS loudly)
@@ -371,31 +372,40 @@ public class Pet { @Id @GeneratedValue(strategy = GenerationType.UUID) private U
 `Species {DOG, CAT, OTHER}` and `PetStatus {ACTIVE, SOLD, HIDDEN, PENDING_REVIEW}`. Enums make
 invalid states impossible to write (`setStatus("BANANA")` doesn't compile).
 
-### 6.8 `pet/dto/PetSummary` and `pet/dto/PetResponse` — the DTOs
+### 6.8 `pet/dto` — the DTOs (`PetSummary`, `PetResponse`, `PetFilter`)
 
 Records (immutable carriers) that define the JSON contract:
 
 ```
 PetSummary   = id, title, species, breed, price, city, province, status, createdAt
 PetResponse  = PetSummary + sellerId, ageMonths, description
+PetFilter    = species?, province?, city?, breed?, minPrice?, maxPrice?, minAgeMonths?, maxAgeMonths?
 ```
 
 * The **list** endpoint returns `PetSummary` — no long description for 50 pets.
 * The **detail** endpoint returns `PetResponse` — everything the detail page shows.
+* `PetFilter` carries the optional search fields; a `null` field means "do not filter on this one".
 
 Why DTOs at all? (1) bandwidth, (2) entities stay internal so the schema can evolve without
 breaking clients, (3) nothing sensitive can leak accidentally.
 
-### 6.9 `pet/repository/PetRepository`
+### 6.9 `pet/repository/PetRepository` + `PetSpecifications`
 
 ```java
-public interface PetRepository extends JpaRepository<Pet, UUID> { }
+public interface PetRepository extends JpaRepository<Pet, UUID>,
+                                        JpaSpecificationExecutor<Pet> { }
 ```
 
 The two type arguments tell Spring Data everything: **which table** (from `@Table`) and **which
 key** (from `@Id`). We inherit `findAll(Pageable)`, `findById`, `save`, `count`, `deleteById`
 without writing any SQL. Methods we *do* write are **derived queries**: Spring Data parses the
 method name (`findByEmail` → `SELECT … WHERE email = ?`).
+
+`JpaSpecificationExecutor` adds one more method: `findAll(Specification<Pet>, Pageable)`. A
+`Specification` is a lambda that receives the Criteria API pieces (`root`, `query`, `cb`) and
+returns a predicate. `pet/repository/PetSpecifications.activeMatching(filter)` composes the
+filters: it **always** adds `status = ACTIVE`, then adds one clause per non-null field. That is
+why eight optional filters don't explode into hundreds of derived-query methods.
 
 ### 6.10 `pet/service/PetService` — the brain
 
@@ -407,8 +417,10 @@ public class PetService {
     public PetService(PetRepository r, UserRepository u) { this.petRepository = r; this.userRepository = u; }
 
     @Transactional(readOnly = true)                              // one DB transaction
-    public Page<PetSummary> listPets(Pageable p) {
-        return petRepository.findAll(p).map(PetService::toSummary);
+    public PagedResponse<PetSummary> listPets(PetFilter filter, Pageable p) {
+        return PagedResponse.of(
+                petRepository.findAll(PetSpecifications.activeMatching(filter), p)
+                             .map(PetService::toSummary));
     }
 
     @Transactional(readOnly = true)
@@ -440,22 +452,36 @@ line, no extra SQL.
 ### 6.11 `pet/controller/PetController` — thin HTTP layer
 
 ```java
-@GetMapping                       // GET /api/v1/pets?page=0&size=20
-public Page<PetSummary> listPets(@RequestParam(defaultValue = "0") int page,
-                                 @RequestParam(defaultValue = "20") int size) {
-    int safeSize = Math.min(size, 50);          // hard cap: never trust the client
-    int safePage = Math.max(page, 0);
-    return petService.listPets(PageRequest.of(safePage, safeSize, Sort.by(DESC, "createdAt")));
+@GetMapping                       // GET /api/v1/pets?species=DOG&sort=price&order=asc
+public PagedResponse<PetSummary> listPets(
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "20") int size,
+        @RequestParam(required = false) Species species,     // …7 more optional filters…
+        @RequestParam(defaultValue = "createdAt") String sort,
+        @RequestParam(defaultValue = "desc") String order) {
+
+    PageRequest pageable = PageRequest.of(
+            Math.max(page, 0),
+            Math.min(size, 50),                               // hard cap: never trust the client
+            parseSort(sort, order));                          // allowlist: createdAt | price | ageMonths
+    return petService.listPets(new PetFilter(species, /* … */), pageable);
 }
 ```
 
 Why the cap? Without it, `?size=1000000` makes the database return a million rows and ships
 megabytes of JSON. Unbounded pagination is a classic denial-of-service vector.
 
+Why the sort **allowlist**? Handing a raw client string to `Sort.by(...)` lets a typo reach Spring
+Data, which throws `PropertyReferenceException` (a 500), and lets clients sort by any column —
+including unindexed ones — which is a cheap denial-of-service. `parseSort` accepts only
+`createdAt`, `price`, or `ageMonths` and only `asc`/`desc`; anything else becomes a domain
+`InvalidSortException` → **400** `problem+json`.
+
 ### 6.12 Domain exceptions
 
 `PetNotFoundException`, `ForbiddenPetAccessException`, `InvalidPetStatusException`,
-`EmailAlreadyRegisteredException`, `InvalidCredentialsException`, `InvalidRefreshTokenException`:
+`InvalidSortException`, `EmailAlreadyRegisteredException`, `InvalidCredentialsException`,
+`InvalidRefreshTokenException`:
 they describe *what went wrong* in business language and know nothing about HTTP.
 `GlobalExceptionHandler` decides how each one becomes a status code. Extending `RuntimeException`
 means callers aren't forced to write `try/catch` and transactions roll back automatically.
@@ -463,6 +489,9 @@ means callers aren't forced to write `try/catch` and transactions roll back auto
 * `InvalidPetStatusException` encodes an **authorization** rule ("only an admin may set
   `PENDING_REVIEW`"). It is thrown from the service — the layer every caller path must pass
   through — not the controller, so a new endpoint can't accidentally bypass it.
+* `InvalidSortException` encodes a **presentation** rule ("only these sort keys/directions are
+  allowed"). It is thrown from the controller's sort parser, because sorting is a query-string
+  concern; the handler still renders it in the shared `problem+json` shape.
 
 ### 6.13 `user/User` + `user/Role`
 
@@ -809,7 +838,9 @@ refresh_tokens: id, user_id → users(id), token_hash(UNIQUE), expires_at, revok
 ```
 
 Indexes on `pets`: `(status, created_at DESC)`, `(species, breed)`, `(province, city)`,
-`(price)`, `(seller_id)`, and a trigram index on `title` for search.
+`(price)`, `(seller_id)`, a trigram index on `title`, and — added in Step 10 — `(age_months)`,
+`(city)`, and a GIN trigram index on `lower(breed)` for the case-insensitive breed search.
+`V2` already covered the other filter columns, so `V6` adds only what was genuinely missing.
 
 ### Migrations
 
@@ -820,6 +851,7 @@ Indexes on `pets`: `(status, created_at DESC)`, `(species, breed)`, `(province, 
 | `V3__seed_sample_pets.sql` | 1 demo seller + 3 demo pets |
 | `V4__add_sex_updated_at_refresh_tokens.sql` | added `sex`, `updated_at`, `version` (optimistic locking) to `pets`; created `refresh_tokens` (now used by the refresh-token flow) |
 | `V5__fix_seed_user_password.sql` | gave the V3 seed seller a real BCrypt hash (V3 had stored a placeholder, so it could never log in) |
+| `V6__add_pet_search_indexes.sql` | added the search indexes the query patterns needed but `V2` lacked: `(age_months)`, `(city)`, and `gin(lower(breed) trgm)` |
 
 **Rules:**
 
@@ -830,7 +862,7 @@ Indexes on `pets`: `(status, created_at DESC)`, `(species, breed)`, `(province, 
   edit one accidentally, `Flyway.repair()` realigns the stored checksum — but the *data* still
   reflects the original migration, so an append-only fix is still required.
 * Flyway runs pending migrations automatically at startup (you'll see `Migrating schema "public"
-  to version "5 - fix seed user password"`).
+  to version "6 - add pet search indexes"`).
 
 ### Two JPA settings worth knowing (`application.yaml`)
 
@@ -857,14 +889,14 @@ Controller  →  returns PetResponse (DTO)     ← entities never reach here
 
 | Test | Boots | Database? | What it proves |
 |---|---|---|---|
-| `PetControllerTest` (`@WebMvcTest`) | web layer only | ❌ (service is mocked) | status codes, JSON shape, 404/bad-UUID/malformed-JSON all in `ProblemDetail` format, security whitelist, `@PreAuthorize` role rules (incl. the `403` body) |
-| `PetRepositoryTest` (`@DataJpaTest`) | JPA layer | ✅ (real Docker Postgres, rolled back after each test) | queries, pagination counts, `Optional` behaviour, status filtering |
+| `PetControllerTest` (`@WebMvcTest`) | web layer only | ❌ (service is mocked) | status codes, JSON shape, 404/bad-UUID/malformed-JSON all in `ProblemDetail` format, security whitelist, `@PreAuthorize` role rules (incl. the `403` body), query params → `PetFilter`, sort allowlist (`400` on bad input), paging caps |
+| `PetRepositoryTest` (`@DataJpaTest`) | JPA layer | ✅ (real Docker Postgres, rolled back after each test) | queries, pagination counts, `Optional` behaviour, status filtering, **and the Specifications** (species/province/city/breed/price/age filters, AND-combination, never returning non-`ACTIVE`, sort) |
 | `PetServiceTest` (plain Mockito) | nothing (no Spring) | ❌ repository is a mock | business rules: `ACTIVE`-only listing, ownership, admin-only status rejected, `USER`→`SELLER` promotion |
 | `AuthServiceTest` (plain Mockito, real BCrypt) | nothing | ❌ repositories are mocks | login rules (correct/wrong/unknown password, legacy hashes, normalization) **and** refresh rotation/revocation + idempotent logout |
 | `AuthControllerTest` (`@WebMvcTest`) | web layer | ❌ (service mocked) | login/refresh/logout are public, token JSON shape, 401 problem details, 400 validation |
 | `PawzaarApiApplicationTests` (`@SpringBootTest`) | everything | ✅ | the whole context starts |
 
-Current total: **56 tests**, all green with `mvn test`.
+Current total: **71 tests**, all green with `mvn test`.
 
 ```bash
 .\mvnw.cmd test                                            # all tests
@@ -1051,7 +1083,8 @@ imports.
 | 8.3 | Strict CORS allowlist; `USER` → `SELLER` promotion on first listing | ✅ |
 | 8.4 | GitHub Actions CI, `README`, multi-stage Dockerfile | ✅ |
 | 9 | Role-based authorization: `@EnableMethodSecurity` + `@PreAuthorize` on writes; `403` kept in `ProblemDetail` | ✅ |
-| 10 | Next up: rate limiting, image upload, search filters | ⏳ |
+| 10 | Search & filtering: optional filters (`Specification`), sort allowlist, `V6` indexes, tests/docs/Postman | ✅ |
+| 11 | Next up: rate limiting, image upload | ⏳ |
 
 ---
 

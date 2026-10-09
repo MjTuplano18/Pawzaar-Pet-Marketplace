@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -174,6 +175,36 @@ class PetControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.title").value("Invalid sort parameter"));
+    }
+
+    @Test
+    void listClampsPagingToSafeBounds() throws Exception {
+        when(petService.listPets(any(), any()))
+                .thenReturn(new PagedResponse<>(List.of(), 0, 50, 0, 0));
+
+        mockMvc.perform(get("/api/v1/pets").param("page", "-3").param("size", "999"))
+                .andExpect(status().isOk());
+
+        // Negative page -> 0; oversized page size -> capped at 50.
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(petService).listPets(any(), captor.capture());
+        assertEquals(0, captor.getValue().getPageNumber());
+        assertEquals(50, captor.getValue().getPageSize());
+    }
+
+    @Test
+    void listDefaultsToNewestFirst() throws Exception {
+        when(petService.listPets(any(), any()))
+                .thenReturn(new PagedResponse<>(List.of(), 0, 20, 0, 0));
+
+        mockMvc.perform(get("/api/v1/pets"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(petService).listPets(any(), captor.capture());
+        Sort.Order order = captor.getValue().getSort().getOrderFor("createdAt");
+        assertNotNull(order);
+        assertEquals(Sort.Direction.DESC, order.getDirection());
     }
 
     @Test
