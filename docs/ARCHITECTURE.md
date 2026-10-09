@@ -872,6 +872,11 @@ Current total: **56 tests**, all green with `mvn test`.
 .\mvnw.cmd test "-Dtest=PetRepositoryTest#findByIdWithRandomUuidIsEmpty"   # one method
 ```
 
+For the whole CI-equivalent check locally, run **`.\verify-local.ps1`**. It does four things:
+ensures the DB is up, runs `mvnw verify`, builds the Docker image, then starts the app and drives
+the real HTTP API (register → create → stale-role 403 → refresh → update) before deleting its own
+probe data. Use `-SkipDockerImage`, `-SkipLive`, or `-SkipTests` to run just part of it.
+
 Two annotations you'll meet:
 
 * `@MockitoBean` — replaces a real bean in a test with a fake double (no DB needed).

@@ -9,7 +9,7 @@ A Philippines-focused pet marketplace API. Buyers browse pets for sale; sellers 
 
 This is a learning + portfolio project built one vertical slice at a time, with a strong emphasis
 on **industry standards**: layered architecture, DTOs instead of exposed entities, one error format,
-stateless JWT auth with refresh-token rotation, automated tests, and CI.
+stateless JWT auth with refresh-token rotation, role-based authorization, automated tests, and CI.
 
 > **New to the codebase?** Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — it explains every
 > package, the request flow, and the reasoning behind each design decision.
@@ -23,10 +23,12 @@ stateless JWT auth with refresh-token rotation, automated tests, and CI.
   the service layer. Posting your first listing promotes your account to `SELLER`.
 - **Authentication** — registration + login issuing a short-lived **access JWT** and a long-lived,
   **rotating refresh token**; generic 401s that never reveal whether an email exists.
+- **Authorization** — URL rules plus method-level `@PreAuthorize`: any authenticated user may post a
+  listing, but only `SELLER`s may edit or delete, on top of a service-layer ownership check.
 - **One error format** — every error is an RFC 9457 `application/problem+json` response.
 - **Observability & docs** — Actuator health probes (liveness/readiness) and Swagger UI.
-- **Quality gates** — 52 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds
-  and tests every push.
+- **Quality gates** — 56 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds and
+  tests every push; `.\verify-local.ps1` runs the same checks (plus a live smoke test) locally.
 
 ---
 
@@ -40,7 +42,7 @@ stateless JWT auth with refresh-token rotation, automated tests, and CI.
 | Auth | Spring Security OAuth2 Resource Server, HS256 JWT + opaque refresh tokens |
 | Docs | springdoc-openapi (Swagger UI) |
 | Tests | JUnit 5, Mockito, MockMvc, real PostgreSQL for JPA slices |
-| CI / deploy | GitHub Actions, multi-stage Dockerfile |
+| CI / deploy | GitHub Actions + `verify-local.ps1`, multi-stage Dockerfile |
 
 ---
 
@@ -94,6 +96,17 @@ The API starts on <http://localhost:8080>:
 The JPA and `@SpringBootTest` slices need a real PostgreSQL on `localhost:5433`, so keep
 `docker compose up -d` running (the CI pipeline starts an equivalent service).
 
+For a **full local verification** — compile + all tests + package, the Docker image build, and a
+live end-to-end smoke test of the running API — run the script that mirrors CI:
+
+```powershell
+.\verify-local.ps1
+```
+
+It needs Docker running, and it cleans up after itself (the live probe uses a throwaway account and
+deletes it again, so your seed data is untouched). Skip phases with `-SkipDockerImage`, `-SkipLive`,
+or `-SkipTests`.
+
 ---
 
 ## API overview
@@ -109,9 +122,9 @@ All routes are versioned under `/api/v1`.
 | `POST` | `/auth/logout` | public\* | revoke a refresh token (204) |
 | `GET` | `/pets` | public | paginated `ACTIVE` listings |
 | `GET` | `/pets/{id}` | public | one `ACTIVE` listing (404 otherwise) |
-| `POST` | `/pets` | bearer | create a listing (201 + `Location`) |
-| `PUT` | `/pets/{id}` | owner | replace your listing |
-| `DELETE` | `/pets/{id}` | owner | soft-delete your listing (204) |
+| `POST` | `/pets` | USER/SELLER | create a listing (201 + `Location`) |
+| `PUT` | `/pets/{id}` | SELLER (owner) | replace your listing |
+| `DELETE` | `/pets/{id}` | SELLER (owner) | soft-delete your listing (204) |
 | `GET` | `/me/pets` | bearer | your listings, any status |
 | `GET` | `/actuator/health` | public | readiness/liveness for the host |
 
@@ -160,7 +173,7 @@ service; controllers return DTO records only.
 
 | Done | Next |
 |---|---|
-| Public browsing, seller CRUD, JWT + refresh tokens, CORS, tests, CI, Docker | Role-based `@PreAuthorize` rules, rate limiting, image upload, search filters |
+| Public browsing, seller CRUD, JWT + refresh tokens, role-based `@PreAuthorize`, CORS, tests, CI, Docker | Rate limiting, image upload, search filters |
 
 The full plan lives in
 [`Pawzaar — Spring Boot Learning & Build Roadmap.md`](<Pawzaar — Spring Boot Learning & Build Roadmap.md>).
