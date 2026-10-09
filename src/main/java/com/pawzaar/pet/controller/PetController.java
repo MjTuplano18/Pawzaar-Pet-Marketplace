@@ -1,6 +1,7 @@
 package com.pawzaar.pet.controller;
 
 import com.pawzaar.common.PagedResponse;
+import com.pawzaar.pet.InvalidSortException;
 import com.pawzaar.pet.Species;
 import com.pawzaar.pet.dto.PetCreateRequest;
 import com.pawzaar.pet.dto.PetFilter;
@@ -28,6 +29,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.net.URI;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 
@@ -55,6 +58,13 @@ import java.util.UUID;
 @RequestMapping("/api/v1")
 public class PetController {
 
+    /**
+     * Entity properties a client may sort the public feed by. Client input is NEVER passed
+     * straight to Spring Data: an unknown property throws PropertyReferenceException (a 500),
+     * and sorting by an unindexed column is a cheap denial-of-service. Allowlist, then validate.
+     */
+    private static final Set<String> SORTABLE_FIELDS = Set.of("createdAt", "price", "ageMonths");
+
     private final PetService petService;
 
     public PetController(PetService petService) {
@@ -64,8 +74,8 @@ public class PetController {
     // ── PUBLIC ENDPOINTS ─────────────────────────────────────────────────────────────────────
 
     /**
-     * Paginated list of ACTIVE listings, optionally filtered.
-     * Example: GET /api/v1/pets?page=0&size=20&species=DOG&maxPrice=10000
+     * Paginated list of ACTIVE listings, optionally filtered and sorted.
+     * Example: GET /api/v1/pets?page=0&size=20&species=DOG&maxPrice=10000&sort=price&order=asc
      */
     @GetMapping("/pets")
     public PagedResponse<PetSummary> listPets(
@@ -78,18 +88,37 @@ public class PetController {
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice,
             @RequestParam(required = false) Integer minAgeMonths,
-            @RequestParam(required = false) Integer maxAgeMonths) {
+            @RequestParam(required = false) Integer maxAgeMonths,
+            @RequestParam(defaultValue = "createdAt") String sort,
+            @RequestParam(defaultValue = "desc") String order) {
 
         PageRequest pageable = PageRequest.of(
                 Math.max(page, 0),
                 Math.min(size, 50),
-                Sort.by(Sort.Direction.DESC, "createdAt"));
+                parseSort(sort, order));
 
         PetFilter filter = new PetFilter(
                 species, province, city, breed,
                 minPrice, maxPrice, minAgeMonths, maxAgeMonths);
 
         return petService.listPets(filter, pageable);
+    }
+
+    /**
+     * Turns the client's sort key + order into a Spring Data Sort, refusing anything not on
+     * the allowlist. This is the only place sort input is read, and it is never trusted.
+     */
+    private static Sort parseSort(String sort, String order) {
+        if (!SORTABLE_FIELDS.contains(sort)) {
+            throw new InvalidSortException("sort", sort, SORTABLE_FIELDS);
+        }
+        Sort.Direction direction;
+        try {
+            direction = Sort.Direction.fromString(order);   // asc/desc, case-insensitive
+        } catch (IllegalArgumentException e) {
+            throw new InvalidSortException("order", order, List.of("asc", "desc"));
+        }
+        return Sort.by(direction, sort);
     }
 
     /**

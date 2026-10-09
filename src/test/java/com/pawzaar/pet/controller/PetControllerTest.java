@@ -20,6 +20,8 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
@@ -137,6 +139,41 @@ class PetControllerTest {
         assertEquals(Species.DOG, captor.getValue().species());
         assertEquals("Bulacan", captor.getValue().province());
         assertEquals(new BigDecimal("10000"), captor.getValue().maxPrice());
+    }
+
+    @Test
+    void listMapsSortAndOrderToAPageable() throws Exception {
+        when(petService.listPets(any(), any()))
+                .thenReturn(new PagedResponse<>(List.of(), 0, 20, 0, 0));
+
+        mockMvc.perform(get("/api/v1/pets")
+                        .param("sort", "price")
+                        .param("order", "asc"))
+                .andExpect(status().isOk());
+
+        // The controller must translate sort/order into a Sort on the Pageable it passes down.
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(petService).listPets(any(), captor.capture());
+        Sort.Order order = captor.getValue().getSort().getOrderFor("price");
+        assertEquals("price", order.getProperty());
+        assertEquals(Sort.Direction.ASC, order.getDirection());
+    }
+
+    @Test
+    void unknownSortFieldYields400ProblemDetail() throws Exception {
+        // "password" is not on the allowlist - must be rejected, never handed to Spring Data.
+        mockMvc.perform(get("/api/v1/pets").param("sort", "password"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Invalid sort parameter"));
+    }
+
+    @Test
+    void invalidSortOrderYields400ProblemDetail() throws Exception {
+        mockMvc.perform(get("/api/v1/pets").param("order", "sideways"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Invalid sort parameter"));
     }
 
     @Test

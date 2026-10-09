@@ -3,6 +3,7 @@ package com.pawzaar.common;
 // === our own domain exceptions (thrown by services, caught here) ===
 import com.pawzaar.pet.ForbiddenPetAccessException;           // "not your listing"        -> 403
 import com.pawzaar.pet.InvalidPetStatusException;           // "admin-only status"       -> 400
+import com.pawzaar.pet.InvalidSortException;               // "bad sort field/order"    -> 400
 import com.pawzaar.pet.PetNotFoundException;               // "no pet with that id"     -> 404
 import com.pawzaar.user.EmailAlreadyRegisteredException;   // "email already taken"     -> 409
 import com.pawzaar.user.InvalidCredentialsException;       // "login failed"            -> 401
@@ -138,6 +139,19 @@ public class GlobalExceptionHandler {
                 ex.getMessage());              // "Status PENDING_REVIEW cannot be set by a seller"
         problem.setTitle("Invalid listing status");
         problem.setProperty("status", ex.getStatus().name());
+        return problem;
+    }
+
+    // 400 Bad Request: the client asked to sort by an unsupported field or direction.
+    // Kept as its own exception (rather than a generic IllegalArgumentException) so we can
+    // tell "bad sort input" apart from real programming errors.
+    @ExceptionHandler(InvalidSortException.class)
+    public ProblemDetail handleInvalidSort(InvalidSortException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,        // 400
+                ex.getMessage());              // "'x' is not a valid value for 'sort'; allowed: ..."
+        problem.setTitle("Invalid sort parameter");
+        problem.setProperty(ex.getParameter(), ex.getValue());
         return problem;
     }
 
