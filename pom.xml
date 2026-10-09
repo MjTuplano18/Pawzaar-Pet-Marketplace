@@ -56,6 +56,14 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
 		</dependency>
+		<!-- Lets us ISSUE and VERIFY JWTs with Spring Security's own support:
+		     JwtEncoder / JwtDecoder (HMAC-SHA256) + BearerTokenAuthenticationFilter,
+		     which also produces a proper 401 + WWW-Authenticate when no token is sent.
+		     No hand-written token filters required. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-validation</artifactId>

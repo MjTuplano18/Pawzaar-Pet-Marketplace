@@ -18,3 +18,14 @@ spring:
       # Never generate the schema from entities (that's Flyway's job); only CHECK that
       # every entity field maps to an existing table/column. Startup fails on mismatch.
       ddl-auto: validate
+
+# ── Pawzaar's own settings ────────────────────────────────────────────────────
+pawzaar:
+  jwt:
+    # 12-FACTOR CONFIG: the value comes from the JWT_SECRET environment variable in
+    # production; the literal below is a DEV-ONLY fallback so the app runs out of the box.
+    # Base64-encoded, and HS256 requires at least 256 bits (32 bytes) of key material.
+    secret: ${JWT_SECRET:cGF3emFhci1kZXYtb25seS1zZWNyZXQta2V5LWNoYW5nZS1tZS1pbi1wcm9kdWN0aW9uLTAxMjM0NTY3ODk=}
+    # How long a freshly issued token stays valid. Short-lived access tokens are the
+    # industry norm (15-60 min); a real system would add refresh tokens for longer sessions.
+    access-token-validity-minutes: 30

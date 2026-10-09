@@ -3,6 +3,7 @@ package com.pawzaar.common;
 // === our own domain exceptions (thrown by services, caught here) ===
 import com.pawzaar.pet.PetNotFoundException;               // "no pet with that id"     -> 404
 import com.pawzaar.user.EmailAlreadyRegisteredException;   // "email already taken"     -> 409
+import com.pawzaar.user.InvalidCredentialsException;       // "login failed"            -> 401
 
 // === Spring's HTTP layer ===
 import org.springframework.http.HttpStatus;      // enum of HTTP codes: NOT_FOUND, CONFLICT, BAD_REQUEST...
@@ -76,6 +77,19 @@ public class GlobalExceptionHandler {
                 .map(fe -> new FieldProblem(fe.getField(), String.valueOf(fe.getDefaultMessage())))
                 .toList());
 
+        return problem;
+    }
+
+    // 401 Unauthorized: login failed. Note what is NOT here: no email, no "user not found"
+    // vs "wrong password" distinction. Telling an attacker WHICH half was wrong would let
+    // them enumerate registered accounts, so every failure returns the same vague message.
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ProblemDetail handleInvalidCredentials(InvalidCredentialsException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNAUTHORIZED,       // 401
+                ex.getMessage()                // "Invalid email or password"
+        );
+        problem.setTitle("Invalid credentials");
         return problem;
     }
 

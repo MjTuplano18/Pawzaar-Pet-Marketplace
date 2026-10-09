@@ -1,6 +1,7 @@
 package com.pawzaar.pet.repository;
 
 import com.pawzaar.pet.Pet;
+import com.pawzaar.pet.PetStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -51,6 +52,25 @@ class PetRepositoryTest {
         assertTrue(found.isPresent());
         assertFalse(found.get().getTitle().isBlank());
         assertNotNull(found.get().getSellerId());   // V3 links every pet to the seeded seller
+    }
+
+    @Test
+    void findByStatusReturnsOnlyActivePets() {
+        // V3 seeded 3 pets, all created with the table default status ACTIVE.
+        Page<Pet> active = petRepository.findByStatus(PetStatus.ACTIVE, PageRequest.of(0, 10));
+
+        assertEquals(3, active.getTotalElements());
+        assertTrue(active.getContent().stream().allMatch(p -> p.getStatus() == PetStatus.ACTIVE));
+    }
+
+    @Test
+    void findByIdAndStatusHidesPetsThatAreNotActive() {
+        Pet anyPet = petRepository.findAll(PageRequest.of(0, 1)).getContent().get(0);
+
+        // Same pet, wrong status -> treated as "does not exist" for public endpoints.
+        assertTrue(petRepository.findByIdAndStatus(anyPet.getId(), PetStatus.HIDDEN).isEmpty());
+        // Right status -> found.
+        assertTrue(petRepository.findByIdAndStatus(anyPet.getId(), PetStatus.ACTIVE).isPresent());
     }
 
     @Test

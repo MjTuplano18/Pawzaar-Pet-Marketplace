@@ -1,5 +1,6 @@
 package com.pawzaar.pet.controller;
 
+import com.pawzaar.config.JwtConfig;
 import com.pawzaar.config.SecurityConfig;
 import com.pawzaar.pet.PetNotFoundException;
 import com.pawzaar.pet.PetStatus;
@@ -34,7 +35,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * - no database, no real service. The service is replaced by a Mockito mock.
  */
 @WebMvcTest(PetController.class)
-@Import(SecurityConfig.class)   // pull OUR security rules into the slice, so the whitelist is tested too
+// Import OUR security chain and the JWT wiring it depends on.
+// JwtConfig is not part of the @WebMvcTest slice (it is a plain @Configuration), so without
+// this import the slice has no JwtAuthenticationConverter/JwtDecoder bean and fails to start.
+@Import({SecurityConfig.class, JwtConfig.class})
 class PetControllerTest {
 
     @Autowired
@@ -94,9 +98,11 @@ class PetControllerTest {
     }
 
     @Test
-    void unknownRouteIsBlocked() throws Exception {
+    void unknownRouteRequiresAuthentication() throws Exception {
         // Not whitelisted -> the filter chain rejects it BEFORE the controller.
+        // Since the JWT resource server is wired in, an anonymous request now gets a proper
+        // 401 Unauthorized (it used to be 403 back when there was no auth mechanism at all).
         mockMvc.perform(get("/api/v1/users"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 }

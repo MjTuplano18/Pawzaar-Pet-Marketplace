@@ -18,6 +18,10 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 // Represents the security filter chain that processes incoming HTTP requests.
 import org.springframework.security.web.SecurityFilterChain;
 
+// Reads the JWT's "role" claim and turns it into authorities (ROLE_USER / ROLE_SELLER).
+// Injected into the filter chain below so authenticated requests carry real roles.
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+
 import org.springframework.http.HttpMethod;
 
 
@@ -33,7 +37,8 @@ public class SecurityConfig {
 
     // Creates the security filter chain used to protect API endpoints.
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http,
+                                    JwtAuthenticationConverter jwtAuthenticationConverter) throws Exception {
 
         // Disables CSRF because the API is designed to use stateless token authentication.
         http.csrf(csrf -> csrf.disable());
@@ -60,7 +65,17 @@ public class SecurityConfig {
                         "/api/v1/auth/login",
                         "/api/v1/auth/refresh").permitAll()
                 // Everything else (any method, any other URL): must be authenticated.
-                .anyRequest().authenticated());
+                .anyRequest().authenticated())
+
+            // THE RESOURCE SERVER: Spring Security's JWT support, wired in one line.
+            // On every protected request it now:
+            //   1) looks for the "Authorization: Bearer <token>" header
+            //   2) verifies the signature with our JwtDecoder (no database lookup!)
+            //   3) converts the claims into authorities via the converter injected above
+            //   4) answers a proper 401 + WWW-Authenticate when the token is missing,
+            //      expired or forged - that is the 403 -> 401 change we predicted earlier
+            .oauth2ResourceServer(oauth2 -> oauth2
+                    .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter)));
 
         // Builds and returns the configured security filter chain.
         return http.build();

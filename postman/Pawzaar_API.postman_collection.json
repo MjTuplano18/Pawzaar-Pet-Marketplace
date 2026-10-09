@@ -391,6 +391,137 @@
           }
         }
       ]
+    },
+    {
+      "name": "05 Login & JWT (Step 6.3)",
+      "description": "Login issues a JWT; the token then travels in the Authorization header. Run 'POST login' first - it saves {{access_token}} for the other requests.",
+      "item": [
+        {
+          "name": "POST login (200 + token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('Token type is Bearer', () => pm.expect(b.tokenType).to.eql('Bearer'));",
+                  "pm.test('Token has 3 JWT segments', () => pm.expect(b.accessToken.split('.')).to.have.lengthOf(3));",
+                  "pm.test('Expiry is 30 minutes', () => pm.expect(b.expiresInSeconds).to.eql(1800));",
+                  "pm.collectionVariables.set('access_token', b.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ana@email.com\",\n  \"password\": \"pawzaar123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/auth/login",
+            "description": "Verifies the BCrypt hash and returns a signed JWT. The password travels in the BODY, never in the URL."
+          }
+        },
+        {
+          "name": "POST login wrong password → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));",
+                  "const b = pm.response.json();",
+                  "pm.test('RFC 9457 title', () => pm.expect(b.title).to.eql('Invalid credentials'));",
+                  "pm.test('Identical message to unknown email (no user enumeration)', () => pm.expect(b.detail).to.eql('Invalid email or password'));",
+                  "pm.test('Does not echo the email back', () => pm.expect(b).to.not.have.property('email'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ana@email.com\",\n  \"password\": \"definitely-wrong\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{base_url}}/api/v1/auth/login",
+            "description": "A wrong password and an unknown email deliberately produce the SAME response."
+          }
+        },
+        {
+          "name": "Protected route WITHOUT token → 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401 Unauthorized', () => pm.response.to.have.status(401));",
+                  "pm.test('WWW-Authenticate advertises Bearer', () => pm.expect(pm.response.headers.get('WWW-Authenticate')).to.include('Bearer'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/users",
+            "description": "Anonymous request to a protected route. With the JWT resource server wired this is 401 (it was 403 before Step 6.3)."
+          }
+        },
+        {
+          "name": "Protected route WITH token → passes security",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Not blocked by security (401/403 would mean the token was rejected)', () => {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 400, 404, 405]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/users",
+            "description": "Same URL, now WITH the token. Expect 404 - meaning the token was accepted and only the endpoint is missing."
+          }
+        }
+      ]
     }
   ]
 }
