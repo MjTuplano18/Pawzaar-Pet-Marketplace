@@ -33,7 +33,7 @@ reader who knows core Java and OOP — but not Spring Boot — can follow along.
 
 A **Philippines-focused pet marketplace API**. Buyers browse pets for sale; sellers post listings.
 
-Currently implemented (Steps 1–6.2):
+Currently implemented (through Step 8):
 
 | Capability | Status |
 |---|---|
@@ -41,11 +41,16 @@ Currently implemented (Steps 1–6.2):
 | Public, paginated pet browsing (`GET /pets`) | ✅ done |
 | Pet detail with a clean 404 (`GET /pets/{id}`) | ✅ done |
 | One consistent error format (RFC 9457) | ✅ done |
-| Automated tests (web slice + DB slice) | ✅ 8 tests |
+| Automated tests (web slice + DB slice + unit) | ✅ 52 tests |
 | User registration with hashed passwords | ✅ done |
 | Login + JWT issuance, token verification on protected routes | ✅ done (Step 6.3) |
-| Seller-only endpoints that use the token for **authorization** | ⏳ Step 7 |
-| Seller actions (create/edit/hide a pet) | ⏳ Step 7 |
+| Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ done |
+| Seller endpoints that use the token for **authorization** (ownership) | ✅ done (Step 7) |
+| `USER` → `SELLER` promotion on first listing | ✅ done |
+| Strict CORS allowlist | ✅ done |
+| OpenAPI/Swagger UI, profiles, actuator health | ✅ done |
+| GitHub Actions CI, `README`, multi-stage Dockerfile | ✅ done |
+
 
 ---
 
@@ -200,12 +205,16 @@ com.pawzaar
 │   └── GlobalExceptionHandler.java   the ONE place exceptions become HTTP responses
 ├── config/                      framework wiring
 │   ├── SecurityConfig.java       who may access what
+│   ├── CorsConfig.java           which browser origins may call the API
+│   ├── JwtConfig.java            issue + verify tokens, token lifetimes
 │   └── PasswordEncoderConfig.java    how passwords are hashed
 └── pet/                         ── the "pet" feature ──
     ├── Pet.java                 entity (how a pet is STORED)
     ├── Species.java             enums (the domain vocabulary)
     ├── PetStatus.java
     ├── PetNotFoundException.java    domain error (no HTTP knowledge)
+    ├── ForbiddenPetAccessException.java
+    ├── InvalidPetStatusException.java
     ├── dto/                     the JSON shapes we expose
     │   ├── PetSummary.java      list shape (lean)
     │   └── PetResponse.java     detail shape (full)
@@ -217,10 +226,14 @@ com.pawzaar
         └── PetController.java
 
 └── user/                         ── the "user" feature (Step 6) ──
-    ├── User.java, Role.java, EmailAlreadyRegisteredException.java
-    ├── dto/       RegisterRequest.java, UserResponse.java
-    ├── repository/ UserRepository.java
-    ├── service/    AuthService.java
+    ├── User.java, Role.java
+    ├── RefreshToken.java        entity: stored (hashed) refresh tokens
+    ├── EmailAlreadyRegisteredException.java
+    ├── InvalidCredentialsException.java
+    ├── InvalidRefreshTokenException.java
+    ├── dto/       RegisterRequest, UserResponse, LoginRequest, RefreshRequest, TokenResponse
+    ├── repository/ UserRepository.java, RefreshTokenRepository.java
+    ├── service/    AuthService.java     (register, login, refresh, logout)
     └── controller/ AuthController.java
 ```
 
@@ -269,6 +282,7 @@ exception type. Controllers and services never write error responses; they just 
 | `PetNotFoundException` | 404 | `Pet not found` |
 | `ForbiddenPetAccessException` | 403 | `Access denied` |
 | `InvalidCredentialsException` | 401 | `Invalid credentials` |
+| `InvalidRefreshTokenException` (bad/expired/used refresh token) | 401 | `Invalid refresh token` |
 | `EmailAlreadyRegisteredException` | 409 | `Email already registered` |
 | `InvalidPetStatusException` (seller set an admin-only status) | 400 | `Invalid listing status` |
 | `MethodArgumentNotValidException` (`@Valid` failure) | 400 | `Validation failed` + `errors[]` |
@@ -291,6 +305,7 @@ The filter chain, built once at startup and applied to **every** request:
 
 ```java
 http.csrf(csrf -> csrf.disable());                    // no cookies → no CSRF
+http.cors(Customizer.withDefaults());                 // browser CORS rules from CorsConfig
 http.sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 http.authorizeHttpRequests(auth -> auth
         .requestMatchers("/api/v1/health").permitAll()
@@ -299,7 +314,8 @@ http.authorizeHttpRequests(auth -> auth
         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
         .requestMatchers(HttpMethod.GET, "/api/v1/pets", "/api/v1/pets/**").permitAll()
         .requestMatchers(HttpMethod.POST,
-                "/api/v1/auth/register", "/api/v1/auth/login").permitAll()
+                "/api/v1/auth/register", "/api/v1/auth/login",
+                "/api/v1/auth/refresh", "/api/v1/auth/logout").permitAll()
         .anyRequest().authenticated());                // deny-by-default
 return http.build();
 ```
@@ -382,7 +398,8 @@ method name (`findByEmail` → `SELECT … WHERE email = ?`).
 @Service
 public class PetService {
     private final PetRepository petRepository;                    // constructor injection
-    public PetService(PetRepository r) { this.petRepository = r; }
+    private final UserRepository userRepository;
+    public PetService(PetRepository r, UserRepository u) { this.petRepository = r; this.userRepository = u; }
 
     @Transactional(readOnly = true)                              // one DB transaction
     public Page<PetSummary> listPets(Pageable p) {
@@ -407,6 +424,11 @@ Its three jobs:
 2. **Business rules** — paging caps, ownership checks, hashing.
 3. **Translation** — entity → DTO, so `Pet` never leaves.
 
+It also **promotes the account to `SELLER`** the first time it creates a listing (a seller is just
+a user who has posted). The change runs in the *same* transaction as the insert, so the listing and
+the role can never disagree. The JWT still says `USER` until the next token is issued, which is why
+the refresh-token flow matters: refreshing picks up the new role.
+
 `Page.map(...)` transforms every element of the page: `Page<Pet>` → `Page<PetSummary>`, one
 line, no extra SQL.
 
@@ -428,10 +450,10 @@ megabytes of JSON. Unbounded pagination is a classic denial-of-service vector.
 ### 6.12 Domain exceptions
 
 `PetNotFoundException`, `ForbiddenPetAccessException`, `InvalidPetStatusException`,
-`EmailAlreadyRegisteredException`, `InvalidCredentialsException`: they describe *what went wrong*
-in business language and know nothing about HTTP. `GlobalExceptionHandler` decides how each one
-becomes a status code. Extending `RuntimeException` means callers aren't forced to write
-`try/catch` and transactions roll back automatically.
+`EmailAlreadyRegisteredException`, `InvalidCredentialsException`, `InvalidRefreshTokenException`:
+they describe *what went wrong* in business language and know nothing about HTTP.
+`GlobalExceptionHandler` decides how each one becomes a status code. Extending `RuntimeException`
+means callers aren't forced to write `try/catch` and transactions roll back automatically.
 
 * `InvalidPetStatusException` encodes an **authorization** rule ("only an admin may set
   `PENDING_REVIEW`"). It is thrown from the service — the layer every caller path must pass
@@ -492,6 +514,10 @@ public UserResponse register(RegisterRequest request) {
 Business rules: email uniqueness, email normalization (`Ana@Gmail.com` = `ana@gmail.com`),
 hashing at exactly one place, entity → DTO on the way out.
 
+The class exposes four public methods, one per endpoint: `register(...)`, `login(...)`,
+`refresh(...)` and `logout(...)`. `login` and `refresh` share a private `issueTokens(user)` helper
+that signs the access JWT **and** persists a fresh refresh token (see 6.22).
+
 ### 6.18 `user/controller/AuthController`
 
 ```java
@@ -508,7 +534,7 @@ header — the industry-standard answer for "I created something".
 ### 6.19 `config/JwtConfig` — issuing and verifying tokens
 
 Built on Spring Security's own support (`spring-boot-starter-oauth2-resource-server`), so **no
-hand-written filters**. Four beans:
+hand-written filters**. Six beans:
 
 | Bean | Job |
 |---|---|
@@ -516,6 +542,12 @@ hand-written filters**. Four beans:
 | `JwtEncoder` | signs tokens when someone logs in (used by `AuthService`) |
 | `JwtDecoder` | verifies signature/algorithm/expiry on every protected request (used by Spring Security) |
 | `JwtAuthenticationConverter` | maps the `role` claim → `ROLE_USER` / `ROLE_SELLER` authorities |
+| `Duration accessTokenValidity()` | how long an access token lives (default 30 minutes) |
+| `Duration refreshTokenValidity()` | how long a refresh token lives (default 7 days) |
+
+The two `Duration` beans exist so `AuthService` receives its lifetimes through the constructor
+instead of reading configuration itself — the same "inject it, don't fetch it" idea applied to
+settings.
 
 A JWT is three Base64**url** parts: `header.payload.signature`.
 
@@ -534,7 +566,7 @@ User user = userRepository.findByEmail(email).orElse(null);
 String hashToCompare = (user != null) ? user.getPasswordHash() : dummyHash;
 boolean passwordMatches = passwordEncoder.matches(request.password(), hashToCompare);
 if (user == null || !passwordMatches) throw new InvalidCredentialsException(email);
-return LoginResponse.bearer(issueToken(user), …);
+return issueTokens(user);   // access JWT + stored (hashed) refresh token
 ```
 
 Three deliberate security choices:
@@ -553,6 +585,42 @@ New hashes are stored as `{bcrypt}$2a$10$…`, so the algorithm is recorded in t
 can be changed later (e.g. to Argon2) without invalidating existing passwords.
 `setDefaultPasswordEncoderForMatches(bcrypt)` keeps **legacy unprefixed hashes** working — without
 it, logging in as an older user throws `IllegalArgumentException` and answers 500 instead of 401.
+
+### 6.22 Refresh tokens — rotation and revocation
+
+Access tokens are stateless JWTs: fast to verify, **impossible to revoke** before they expire. That
+is fine when they are short-lived (30 minutes), but a client can't be asked to type a password every
+30 minutes. The refresh token closes that gap.
+
+| | Access token | Refresh token |
+|---|---|---|
+| Format | signed JWT | opaque random string (256 bits, Base64url) |
+| Verified by | signature only (no DB) | database lookup by SHA-256 hash |
+| Lifespan | 30 minutes | 7 days |
+| Revocable | ❌ | ✅ (a `revoked` column) |
+| Sent where | `Authorization: Bearer …` header | request body of `/auth/refresh` and `/auth/logout` |
+
+**Never store the raw refresh token.** `RefreshToken` (table `refresh_tokens`, migration V4) keeps
+only `sha256(rawToken)`. If the database leaks, the attacker has hashes, not usable tokens — the
+same reason passwords are hashed, applied to a *token*.
+
+The flow, with **rotation**:
+
+```text
+POST /auth/login     → {accessToken, refreshToken}
+   … 30 min later the access token is expired …
+POST /auth/refresh   {refreshToken}
+   → look up by hash; reject if unknown / expired / revoked (401)
+   → mark the presented token revoked        ← rotation: it is now burned
+   → return a NEW pair {accessToken, refreshToken}
+POST /auth/logout    {refreshToken}          → revoke it (204, idempotent)
+```
+
+Because the old token is burned on every refresh, a stolen refresh token is only useful until the
+real client refreshes next — and any replay of the old one is rejected. Both endpoints are public
+(whitelisted): a client whose access token just expired must still reach `/auth/refresh`, and the
+refresh token in the body *is* the credential. Tokens are never logged; `TokenResponse.toString()`
+masks them.
 
 ---
 
@@ -639,11 +707,14 @@ ProblemDetail  →  application/problem+json
 | `permitAll("/swagger-ui/**", "/v3/api-docs/**")` | interactive API docs |
 | `permitAll(GET, "/api/v1/pets", "/api/v1/pets/**")` | anyone can **browse** |
 | `permitAll(POST, "/api/v1/auth/register", "/api/v1/auth/login")` | you must be able to register/log in without a token |
+| `permitAll(POST, "/api/v1/auth/refresh", "/api/v1/auth/logout")` | refresh/logout are authenticated by the refresh token in the body, not by an access token |
 | `anyRequest().authenticated()` | everything else needs credentials |
 
-> **Not listed: `/api/v1/auth/refresh`.** The endpoint does not exist yet, so whitelisting it would
-> only produce a misleading 404. Re-add it together with the refresh-token feature (the
-> `refresh_tokens` table from `V4` is already in place).
+The browser-facing CORS rules live in `CorsConfig` (a `CorsConfigurationSource` bean) and are
+switched on by `http.cors(Customizer.withDefaults())`. `allowed-origins` is an explicit allowlist
+from configuration — never `*` — and `allowCredentials` is off because we use a bearer header, not
+cookies. CORS is a *browser* policy: Postman ignores it, so "it worked in Postman" says nothing
+about whether the front end can call the API.
 
 Note the **`HttpMethod.GET`**: anonymous users may *look* at pets, but `POST /api/v1/pets`
 (once it exists) stays locked. Browsing is public; acting is not.
@@ -656,11 +727,15 @@ disabled (CSRF protection exists to protect cookie-based sessions) and why Step 
 
 ```
 POST /api/v1/auth/login  {"email": "...", "password": "..."}
-   → 200 {"accessToken":"eyJhbGci…","tokenType":"Bearer","expiresInSeconds":1800}
+   → 200 {"accessToken":"eyJhbGci…","refreshToken":"kQ8…","tokenType":"Bearer","expiresInSeconds":1800}
 
 Every later request:
-   GET /api/v1/users
+   GET /api/v1/me/pets
    Authorization: Bearer eyJhbGci…
+
+When the access token expires:
+   POST /api/v1/auth/refresh  {"refreshToken":"kQ8…"}
+   → 200 {new accessToken, new refreshToken}     (the old refresh token is now revoked)
 ```
 
 The filter chain's `BearerTokenAuthenticationFilter` (installed by
@@ -685,6 +760,7 @@ convention, so nothing else had to be written.
 users:  id, email(UNIQUE), password_hash, display_name, phone?, role, verified, created_at
 pets:   id, seller_id → users(id), title, species, breed?, age_months, price,
         description?, city, province, status, created_at
+refresh_tokens: id, user_id → users(id), token_hash(UNIQUE), expires_at, revoked, created_at
 ```
 
 Indexes on `pets`: `(status, created_at DESC)`, `(species, breed)`, `(province, city)`,
@@ -697,7 +773,7 @@ Indexes on `pets`: `(status, created_at DESC)`, `(species, breed)`, `(province, 
 | `V1__init.sql` | enabled the `pg_trgm` extension (fuzzy text search) |
 | `V2__create_users_and_pets.sql` | created both tables + indexes |
 | `V3__seed_sample_pets.sql` | 1 demo seller + 3 demo pets |
-| `V4__add_sex_updated_at_refresh_tokens.sql` | added `sex`, `updated_at`, `version` (optimistic locking) to `pets`; created `refresh_tokens` (reserved for the future refresh feature) |
+| `V4__add_sex_updated_at_refresh_tokens.sql` | added `sex`, `updated_at`, `version` (optimistic locking) to `pets`; created `refresh_tokens` (now used by the refresh-token flow) |
 | `V5__fix_seed_user_password.sql` | gave the V3 seed seller a real BCrypt hash (V3 had stored a placeholder, so it could never log in) |
 
 **Rules:**
@@ -738,12 +814,12 @@ Controller  →  returns PetResponse (DTO)     ← entities never reach here
 |---|---|---|---|
 | `PetControllerTest` (`@WebMvcTest`) | web layer only | ❌ (service is mocked) | status codes, JSON shape, 404/bad-UUID/malformed-JSON all in `ProblemDetail` format, security whitelist |
 | `PetRepositoryTest` (`@DataJpaTest`) | JPA layer | ✅ (real Docker Postgres, rolled back after each test) | queries, pagination counts, `Optional` behaviour, status filtering |
-| `PetServiceTest` (plain Mockito) | nothing (no Spring) | ❌ repository is a mock | business rules: `ACTIVE`-only listing, ownership, admin-only status rejected |
-| `AuthServiceTest` (plain Mockito, real BCrypt) | nothing | ❌ repository is a mock | login rules: correct password, wrong password, unknown email, legacy hashes, email normalisation |
-| `AuthControllerTest` (`@WebMvcTest`) | web layer | ❌ (service mocked) | login is public, returns a Bearer token, 401 problem detail, 400 validation |
+| `PetServiceTest` (plain Mockito) | nothing (no Spring) | ❌ repository is a mock | business rules: `ACTIVE`-only listing, ownership, admin-only status rejected, `USER`→`SELLER` promotion |
+| `AuthServiceTest` (plain Mockito, real BCrypt) | nothing | ❌ repositories are mocks | login rules (correct/wrong/unknown password, legacy hashes, normalization) **and** refresh rotation/revocation + idempotent logout |
+| `AuthControllerTest` (`@WebMvcTest`) | web layer | ❌ (service mocked) | login/refresh/logout are public, token JSON shape, 401 problem details, 400 validation |
 | `PawzaarApiApplicationTests` (`@SpringBootTest`) | everything | ✅ | the whole context starts |
 
-Current total: **41 tests**, all green with `mvn test`.
+Current total: **52 tests**, all green with `mvn test`.
 
 ```bash
 .\mvnw.cmd test                                            # all tests
@@ -816,6 +892,7 @@ Worth remembering, because each cost real time:
 | **Stale `target/classes/application.yaml`** | config "worked" but only existed in build output | `target/` is disposable; never commit or trust it — `mvn clean` deletes it. |
 | **PowerShell mangles JSON quotes** | `curl.exe -d '{...}'` sent invalid JSON; server returned a mystery `403` | Use Postman, `Invoke-RestMethod`, or `--data-binary "@file.json"`. |
 | **`403` masking `400`** | real error invisible because `/error` was protected | keep `permitAll("/error")`. |
+| **"Works in Postman, fails in the browser"** | the browser blocked the response because no `Access-Control-Allow-Origin` header came back | CORS is a *browser* rule; Postman never enforces it. Configure a `CorsConfigurationSource` and enable `http.cors(...)`. |
 | **403, not 401, before auth exists** | no authentication mechanism to challenge against | expected until Step 6.4 |
 | **Delegating encoder needs a prefix** | `IllegalArgumentException: each password must have a password encoding prefix` → login answered **500** instead of 401 | store `"{bcrypt}$2a$10$..."`, and set a fallback encoder (`setDefaultPasswordEncoderForMatches`) for hashes written before the change |
 | **Hand-written "dummy" BCrypt hash** | a copied hash string made `matches()` throw instead of returning `false` | generate the timing-protection hash with the injected encoder at startup |
@@ -914,7 +991,11 @@ imports.
 | 6.4 | Token verification wired in (403 → 401 confirmed) | ✅ |
 | 6.5 | Review pass: append-only `V5` seed fix, admin-only status guard, full `ProblemDetail` coverage, actuator health | ✅ |
 | 7 | Seller actions: `POST/PUT/DELETE /pets` with ownership authorization, `GET /me/pets` | ✅ (PUT, not PATCH) |
-| 8 | Portfolio polish: OpenAPI ✅ and `run-dev.ps1` ✅; GitHub Actions CI, `README`, Dockerfile, strict CORS, refresh tokens | ⏳ |
+| 8.1 | Portfolio polish: OpenAPI ✅, `run-dev.ps1` ✅ | ✅ |
+| 8.2 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ |
+| 8.3 | Strict CORS allowlist; `USER` → `SELLER` promotion on first listing | ✅ |
+| 8.4 | GitHub Actions CI, `README`, multi-stage Dockerfile | ✅ |
+| 9 | Next up: `@PreAuthorize` role rules, rate limiting, image upload, search filters | ⏳ |
 
 ---
 

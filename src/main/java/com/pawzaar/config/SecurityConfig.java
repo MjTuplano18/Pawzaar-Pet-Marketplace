@@ -9,6 +9,9 @@ import org.springframework.context.annotation.Configuration;
 // Provides methods for configuring HTTP security rules.
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 
+// Customizer.withDefaults() reuses the default behaviour for a feature (here: CORS).
+import org.springframework.security.config.Customizer;
+
 // Enables Spring Security for the web application.
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 
@@ -43,6 +46,12 @@ public class SecurityConfig {
         // Disables CSRF because the API is designed to use stateless token authentication.
         http.csrf(csrf -> csrf.disable());
 
+        // CORS: lets a browser app on another origin (e.g. the React dev server on :5173) call
+        // this API. The rules come from the CorsConfigurationSource bean in CorsConfig; this one
+        // line tells Spring Security to consult it. Without it, the browser's preflight OPTIONS
+        // request would hit the authentication filter and fail before MVC ever sees it.
+        http.cors(Customizer.withDefaults());
+
         // Prevents Spring from storing authentication information in an HTTP session.
         // Each request will need to provide its authentication token.
         http.sessionManagement(session ->
@@ -69,12 +78,14 @@ public class SecurityConfig {
                 // POST/PUT/DELETE /api/v1/pets and GET /api/v1/me/pets fall through to anyRequest().authenticated().
                 .requestMatchers(HttpMethod.GET, "/api/v1/pets", "/api/v1/pets/**").permitAll()
                 // Auth must be PUBLIC: you cannot log in if logging in requires a token.
-                // NOTE: /auth/refresh is intentionally NOT listed yet - the endpoint does not
-                // exist. Whitelisting a route with no handler only produces a misleading 404.
-                // Add it back together with the refresh-token feature (see V4's refresh_tokens table).
+                // /auth/refresh and /auth/logout are public too, and deliberately so: they are
+                // authenticated by the REFRESH token in the body, not by an access token. A client
+                // whose access token just expired must still be able to reach /auth/refresh.
                 .requestMatchers(HttpMethod.POST,
                         "/api/v1/auth/register",
-                        "/api/v1/auth/login").permitAll()
+                        "/api/v1/auth/login",
+                        "/api/v1/auth/refresh",
+                        "/api/v1/auth/logout").permitAll()
                 // Everything else (any method, any other URL): must be authenticated.
                 .anyRequest().authenticated())
 

@@ -12,6 +12,9 @@ import com.pawzaar.pet.dto.PetResponse;
 import com.pawzaar.pet.dto.PetSummary;
 import com.pawzaar.pet.dto.PetUpdateRequest;
 import com.pawzaar.pet.repository.PetRepository;
+import com.pawzaar.user.Role;
+import com.pawzaar.user.User;
+import com.pawzaar.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -49,6 +52,9 @@ class PetServiceTest {
 
     @Mock
     private PetRepository petRepository;
+
+    @Mock
+    private UserRepository userRepository;
 
     @InjectMocks
     private PetService petService;
@@ -101,6 +107,26 @@ class PetServiceTest {
         assertEquals(PET_ID, response.id());
         assertEquals(OWNER_ID, response.sellerId());
         verify(petRepository).save(any(Pet.class));
+    }
+
+    @Test
+    void createPetPromotesAUserToSellerOnTheirFirstListing() {
+        when(petRepository.save(any(Pet.class))).thenReturn(petWithId(OWNER_ID, PET_ID));
+
+        // A freshly registered account is a plain USER.
+        User user = User.register("ana@pawzaar.test", "{bcrypt}irrelevant", "Ana Reyes");
+        assertEquals(Role.USER, user.getRole());
+        when(userRepository.findById(OWNER_ID)).thenReturn(Optional.of(user));
+
+        PetCreateRequest req = new PetCreateRequest(
+                "Fluffy Shih Tzu", Species.DOG, "Shih Tzu", 12,
+                new BigDecimal("9000.00"), "House trained.", "Quezon City", "Metro Manila", "FEMALE");
+
+        petService.createPet(OWNER_ID, req);
+
+        // Posting a listing is what makes someone a seller.
+        assertEquals(Role.SELLER, user.getRole());
+        verify(userRepository).save(user);
     }
 
     // ── updatePet ──────────────────────────────────────────────────────────────

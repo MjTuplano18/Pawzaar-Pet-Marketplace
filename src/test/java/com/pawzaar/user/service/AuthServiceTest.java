@@ -2,9 +2,12 @@ package com.pawzaar.user.service;
 
 import com.pawzaar.config.PasswordEncoderConfig;
 import com.pawzaar.user.InvalidCredentialsException;
+import com.pawzaar.user.InvalidRefreshTokenException;
+import com.pawzaar.user.RefreshToken;
 import com.pawzaar.user.User;
 import com.pawzaar.user.dto.LoginRequest;
-import com.pawzaar.user.dto.LoginResponse;
+import com.pawzaar.user.dto.TokenResponse;
+import com.pawzaar.user.repository.RefreshTokenRepository;
 import com.pawzaar.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,19 +21,23 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for the LOGIN rules. This class exists because a real bug slipped through here:
- * a hand-written "dummy" hash without the {bcrypt} prefix made the encoder throw, so login
+ * Unit tests for the LOGIN and REFRESH rules. This class exists because a real bug slipped through
+ * here: a hand-written "dummy" hash without the {bcrypt} prefix made the encoder throw, so login
  * answered 500 instead of 401 for unknown emails. These tests now guard that path.
  *
  * <p>Note the real BCryptPasswordEncoder (not a mock): the point is to test real hashing
@@ -45,6 +52,8 @@ class AuthServiceTest {
     private UserRepository userRepository;
     @Mock
     private JwtEncoder jwtEncoder;
+    @Mock
+    private RefreshTokenRepository refreshTokenRepository;
 
     // The REAL production encoder bean (with the {bcrypt} prefix and the legacy fallback),
     // so these tests exercise the exact hashing configuration the app runs with.
@@ -53,7 +62,13 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(userRepository, realEncoder, jwtEncoder, Duration.ofMinutes(30));
+        authService = new AuthService(
+                userRepository,
+                realEncoder,
+                jwtEncoder,
+                Duration.ofMinutes(30),
+                refreshTokenRepository,
+                Duration.ofDays(7));
     }
 
     private static User userWithHash(String hash) {
@@ -88,17 +103,24 @@ class AuthServiceTest {
                 .thenReturn(Jwt.withTokenValue("a.b.c").header("alg", "HS256").claim("sub", EMAIL).build());
     }
 
+    // ── login ──────────────────────────────────────────────────────────────────
+
     @Test
-    void loginWithCorrectPasswordReturnsABearerToken() {
+    void loginWithCorrectPasswordReturnsABearerTokenAndARefreshToken() {
         when(userRepository.findByEmail(EMAIL))
                 .thenReturn(Optional.of(userWithHash(realEncoder.encode("pawzaar123"))));
         stubToken();
 
-        LoginResponse response = authService.login(new LoginRequest(EMAIL, "pawzaar123"));
+        TokenResponse response = authService.login(new LoginRequest(EMAIL, "pawzaar123"));
 
         assertEquals("a.b.c", response.accessToken());
         assertEquals("Bearer", response.tokenType());
         assertEquals(1800, response.expiresInSeconds());
+
+        // Login must ALSO mint a refresh token and persist its hash (never the raw value).
+        assertNotNull(response.refreshToken());
+        assertFalse(response.refreshToken().isBlank());
+        verify(refreshTokenRepository).save(any(RefreshToken.class));
     }
 
     @Test
@@ -133,7 +155,7 @@ class AuthServiceTest {
 
         // Thanks to setDefaultPasswordEncoderForMatches(...) the login still succeeds instead of
         // throwing IllegalArgumentException (which used to surface as HTTP 500).
-        LoginResponse response = authService.login(new LoginRequest(EMAIL, "pawzaar123"));
+        TokenResponse response = authService.login(new LoginRequest(EMAIL, "pawzaar123"));
 
         assertEquals("a.b.c", response.accessToken());
     }
@@ -147,5 +169,73 @@ class AuthServiceTest {
 
         // Proof: the repository was queried with the trimmed, lower-cased address.
         verify(userRepository).findByEmail(EMAIL);
+    }
+
+    // ── refresh ────────────────────────────────────────────────────────────────
+
+    @Test
+    void refreshRotatesTheTokenAndReturnsANewPair() {
+        User user = userWithHash(realEncoder.encode("pawzaar123"));
+        RefreshToken stored = RefreshToken.issue(
+                user.getId(), "irrelevant-hash", Instant.now().plusSeconds(3600));
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(stored));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        stubToken();
+
+        TokenResponse response = authService.refresh("some-raw-refresh-token");
+
+        assertEquals("a.b.c", response.accessToken());
+        assertNotNull(response.refreshToken());
+
+        // ROTATION: the presented token is burned, and a brand-new one is issued.
+        assertTrue(stored.isRevoked(), "the used refresh token must be revoked");
+        verify(refreshTokenRepository).save(any(RefreshToken.class));
+    }
+
+    @Test
+    void refreshWithUnknownTokenFails() {
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.empty());
+
+        assertThrows(InvalidRefreshTokenException.class,
+                () -> authService.refresh("never-issued"));
+    }
+
+    @Test
+    void refreshWithRevokedTokenFails() {
+        RefreshToken stored = RefreshToken.issue(UUID.randomUUID(), "h", Instant.now().plusSeconds(3600));
+        stored.revoke();
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(stored));
+
+        assertThrows(InvalidRefreshTokenException.class,
+                () -> authService.refresh("already-used"));
+    }
+
+    @Test
+    void refreshWithExpiredTokenFails() {
+        RefreshToken stored = RefreshToken.issue(UUID.randomUUID(), "h", Instant.now().minusSeconds(1));
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(stored));
+
+        assertThrows(InvalidRefreshTokenException.class,
+                () -> authService.refresh("expired"));
+    }
+
+    // ── logout ─────────────────────────────────────────────────────────────────
+
+    @Test
+    void logoutRevokesTheToken() {
+        RefreshToken stored = RefreshToken.issue(UUID.randomUUID(), "h", Instant.now().plusSeconds(3600));
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(stored));
+
+        authService.logout("some-raw-refresh-token");
+
+        assertTrue(stored.isRevoked());
+    }
+
+    @Test
+    void logoutIsIdempotentForUnknownTokens() {
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.empty());
+
+        // Must NOT throw: logging out twice, or with a stale token, is still a success.
+        authService.logout("never-issued");
     }
 }

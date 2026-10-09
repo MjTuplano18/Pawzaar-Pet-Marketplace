@@ -19,6 +19,8 @@ Thumbs.db
 # Local environment overrides - may contain real secrets, never commit
 .env
 .env.*
+# ...except the example file, which is meant to be committed.
+!.env.dev.example
 application-local.yaml
 application-local.yml
 

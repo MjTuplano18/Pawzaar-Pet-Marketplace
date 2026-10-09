@@ -11,6 +11,9 @@ import com.pawzaar.pet.dto.PetResponse;
 import com.pawzaar.pet.dto.PetSummary;
 import com.pawzaar.pet.dto.PetUpdateRequest;
 import com.pawzaar.pet.repository.PetRepository;
+import com.pawzaar.user.Role;
+import com.pawzaar.user.User;
+import com.pawzaar.user.repository.UserRepository;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -31,9 +34,11 @@ import java.util.UUID;
 public class PetService {
 
     private final PetRepository petRepository;
+    private final UserRepository userRepository;
 
-    public PetService(PetRepository petRepository) {
+    public PetService(PetRepository petRepository, UserRepository userRepository) {
         this.petRepository = petRepository;
+        this.userRepository = userRepository;
     }
 
     // ── READ ─────────────────────────────────────────────────────────────────────────────────
@@ -79,7 +84,14 @@ public class PetService {
                 request.province(),
                 request.sex()
         );
-        return toResponse(petRepository.save(pet));
+        Pet saved = petRepository.save(pet);
+
+        // A "seller" is simply a user who has posted a listing: posting your first pet promotes
+        // the account from USER to SELLER. Idempotent, so later listings are no-ops. We do it here
+        // (inside the same transaction as the insert) so the two states can never disagree.
+        promoteToSeller(sellerId);
+
+        return toResponse(saved);
     }
 
     /**
@@ -149,6 +161,20 @@ public class PetService {
         if (!pet.getSellerId().equals(callerId)) {
             throw new ForbiddenPetAccessException(pet.getId());
         }
+    }
+
+    /**
+     * Promotes a USER to SELLER the first time they create a listing. A missing user is ignored
+     * (defensive): the caller already passed authentication, so this is a "should not happen",
+     * and failing the whole request over a cosmetic role change would be worse than skipping it.
+     */
+    private void promoteToSeller(UUID sellerId) {
+        userRepository.findById(sellerId).ifPresent(user -> {
+            if (user.getRole() == Role.USER) {
+                user.setRole(Role.SELLER);
+                userRepository.save(user);
+            }
+        });
     }
 
     private static PetSummary toSummary(Pet pet) {

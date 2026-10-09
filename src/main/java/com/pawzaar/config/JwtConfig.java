@@ -55,6 +55,12 @@ public class JwtConfig {
     @Value("${pawzaar.jwt.access-token-validity-minutes:30}")
     private long accessTokenValidityMinutes;
 
+    // Refresh tokens live much longer than access tokens - they are the "stay logged in" part.
+    // A short access token limits the damage if one leaks; a long refresh token avoids constant
+    // re-login. The two durations are deliberately different, and that is the whole design.
+    @Value("${pawzaar.jwt.refresh-token-validity-days:7}")
+    private long refreshTokenValidityDays;
+
     /**
      * Turns the Base64 string into the raw HMAC key bytes.
      * HS256 requires at least 256 bits (32 bytes) - a short key is silently rejected by the
@@ -101,10 +107,16 @@ public class JwtConfig {
         return converter;
     }
 
-    /** How long the tokens we issue stay valid. Exposed as a bean so the service can take it
-     *  through the constructor instead of reading configuration itself. */
+    /** How long the ACCESS tokens we issue stay valid. Exposed as a bean so the service can take
+     *  it through the constructor instead of reading configuration itself. */
     @Bean
     public Duration accessTokenValidity() {
         return Duration.ofMinutes(accessTokenValidityMinutes);
+    }
+
+    /** How long a REFRESH token lives before it must be re-obtained by logging in again. */
+    @Bean
+    public Duration refreshTokenValidity() {
+        return Duration.ofDays(refreshTokenValidityDays);
     }
 }

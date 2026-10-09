@@ -18,6 +18,13 @@ pawzaar:
     # Base64-encoded, and HS256 requires at least 256 bits (32 bytes) of key material.
     secret: ${JWT_SECRET}
     access-token-validity-minutes: ${JWT_VALIDITY_MINUTES:30}
+    # Refresh tokens outlive access tokens; 7 days is a common "stay signed in" window.
+    refresh-token-validity-days: ${JWT_REFRESH_VALIDITY_DAYS:7}
+  web:
+    cors:
+      # Comma-separated list of browser origins allowed to call this API. NEVER use "*" in
+      # production. Override with the CORS_ALLOWED_ORIGINS env var on the host.
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
 
 # ── Actuator: health probes for the hosting platform / load balancer ──────────
 management:

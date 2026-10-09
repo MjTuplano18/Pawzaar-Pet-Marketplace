@@ -6,6 +6,7 @@ import com.pawzaar.pet.InvalidPetStatusException;           // "admin-only statu
 import com.pawzaar.pet.PetNotFoundException;               // "no pet with that id"     -> 404
 import com.pawzaar.user.EmailAlreadyRegisteredException;   // "email already taken"     -> 409
 import com.pawzaar.user.InvalidCredentialsException;       // "login failed"            -> 401
+import com.pawzaar.user.InvalidRefreshTokenException;      // "refresh token bad"       -> 401
 
 // === Spring's HTTP layer ===
 import org.springframework.dao.OptimisticLockingFailureException;  // @Version race        -> 409
@@ -121,6 +122,18 @@ public class GlobalExceptionHandler {
                 ex.getMessage());              // "Status PENDING_REVIEW cannot be set by a seller"
         problem.setTitle("Invalid listing status");
         problem.setProperty("status", ex.getStatus().name());
+        return problem;
+    }
+
+    // 401 Unauthorized: POST /auth/refresh or /auth/logout was given a refresh token that is
+    // unknown, expired, or already revoked. Same generic message as a bad login, for the same
+    // reason: never help an attacker tell the cases apart.
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ProblemDetail handleInvalidRefreshToken(InvalidRefreshTokenException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.UNAUTHORIZED,       // 401
+                ex.getMessage());              // "Refresh token is invalid or expired"
+        problem.setTitle("Invalid refresh token");
         return problem;
     }
 

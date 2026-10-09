@@ -2,11 +2,14 @@ package com.pawzaar.user.service;
 
 import com.pawzaar.user.EmailAlreadyRegisteredException;
 import com.pawzaar.user.InvalidCredentialsException;
+import com.pawzaar.user.InvalidRefreshTokenException;
+import com.pawzaar.user.RefreshToken;
 import com.pawzaar.user.User;
 import com.pawzaar.user.dto.LoginRequest;
-import com.pawzaar.user.dto.LoginResponse;
 import com.pawzaar.user.dto.RegisterRequest;
+import com.pawzaar.user.dto.TokenResponse;
 import com.pawzaar.user.dto.UserResponse;
+import com.pawzaar.user.repository.RefreshTokenRepository;
 import com.pawzaar.user.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
@@ -17,8 +20,14 @@ import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.Locale;
 
 /**
@@ -54,16 +63,29 @@ public class AuthService {
     // How long a token stays valid (a Duration bean from JwtConfig).
     private final Duration accessTokenValidity;
 
+    // Stores the SHA-256 hashes of issued refresh tokens (rotation + revocation live here).
+    private final RefreshTokenRepository refreshTokenRepository;
+
+    // How long a refresh token lives (a Duration bean from JwtConfig).
+    private final Duration refreshTokenValidity;
+
+    // One SecureRandom for the whole service: it is thread-safe and seeding it is expensive.
+    private static final SecureRandom RANDOM = new SecureRandom();
+
     // Constructor INJECTION: with a single constructor, Spring injects automatically -
     // no @Autowired needed. This also makes unit testing easy: you can pass fakes.
     public AuthService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
                        JwtEncoder jwtEncoder,
-                       Duration accessTokenValidity) {
+                       Duration accessTokenValidity,
+                       RefreshTokenRepository refreshTokenRepository,
+                       Duration refreshTokenValidity) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtEncoder = jwtEncoder;
         this.accessTokenValidity = accessTokenValidity;
+        this.refreshTokenRepository = refreshTokenRepository;
+        this.refreshTokenValidity = refreshTokenValidity;
         // One hash computed at startup (~100ms, once) - see the field comment.
         this.dummyHash = passwordEncoder.encode("pawzaar-dummy-password-for-timing-only");
     }
@@ -106,13 +128,14 @@ public class AuthService {
     }
 
     /**
-     * Verifies credentials and issues a JWT.
+     * Verifies credentials and issues a fresh access + refresh token pair.
      *
-     * <p>readOnly = true: login only READS the user row. The token is signed in memory with
-     * the shared secret - no write, no database change.
+     * <p>This is a WRITE transaction: besides reading the user row and signing a JWT in memory,
+     * it inserts a row into {@code refresh_tokens} (the hashed refresh token). If anything below
+     * throws, that insert is rolled back.
      */
-    @Transactional(readOnly = true)
-    public LoginResponse login(LoginRequest request) {
+    @Transactional
+    public TokenResponse login(LoginRequest request) {
         String email = request.email().trim().toLowerCase(Locale.ROOT);
 
         // orElse(null) is normally discouraged, but here it is deliberate: we must keep going
@@ -131,7 +154,80 @@ public class AuthService {
             throw new InvalidCredentialsException(email);
         }
 
-        return LoginResponse.bearer(issueToken(user), accessTokenValidity.toSeconds());
+        return issueTokens(user);
+    }
+
+    /**
+     * Exchanges a valid refresh token for a brand-new access + refresh token pair (rotation).
+     *
+     * <p>Rotation means the presented token is <b>burned</b> and a different one is returned, so a
+     * stolen refresh token is only usable until the legitimate client next refreshes. The used row
+     * is revoked rather than deleted, so a replayed token is detected instead of being ignored.
+     *
+     * @throws InvalidRefreshTokenException if the token is unknown, expired, or already revoked
+     */
+    @Transactional
+    public TokenResponse refresh(String rawRefreshToken) {
+        RefreshToken stored = refreshTokenRepository.findByTokenHash(sha256Hex(rawRefreshToken))
+                .orElseThrow(InvalidRefreshTokenException::new);
+
+        if (!stored.isActive(Instant.now())) {
+            throw new InvalidRefreshTokenException();
+        }
+
+        User user = userRepository.findById(stored.getUserId())
+                // The user could have been deleted since the token was issued.
+                .orElseThrow(InvalidRefreshTokenException::new);
+
+        stored.revoke();   // rotation: the old token can never be used again
+        return issueTokens(user);
+    }
+
+    /**
+     * Revokes a refresh token so it can no longer be exchanged. Idempotent: revoking an unknown
+     * or already-revoked token is not an error, so a double-clicked logout still returns 204.
+     */
+    @Transactional
+    public void logout(String rawRefreshToken) {
+        refreshTokenRepository.findByTokenHash(sha256Hex(rawRefreshToken))
+                .ifPresent(RefreshToken::revoke);
+    }
+
+    /**
+     * Signs a new access JWT and mints a new refresh token for this user.
+     *
+     * <p>The raw refresh token is returned to the caller ONCE and never stored - only its hash is
+     * persisted (see {@link RefreshToken}).
+     */
+    private TokenResponse issueTokens(User user) {
+        String accessToken = issueToken(user);
+
+        String rawRefreshToken = generateRawToken();
+        refreshTokenRepository.save(RefreshToken.issue(
+                user.getId(),
+                sha256Hex(rawRefreshToken),
+                Instant.now().plus(refreshTokenValidity)));
+
+        return TokenResponse.bearer(accessToken, rawRefreshToken, accessTokenValidity.toSeconds());
+    }
+
+    /** 256 bits from a cryptographically secure RNG, URL-safe Base64 (no padding). */
+    private static String generateRawToken() {
+        byte[] bytes = new byte[32];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    /** SHA-256 of the raw token, as 64 lowercase hex characters - the only form we store. */
+    private static String sha256Hex(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 is mandated on every JVM; this branch is unreachable in practice.
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
     }
 
     /**

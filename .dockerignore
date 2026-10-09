@@ -1,0 +1,25 @@
+# Keep the build context small and the cache stable.
+# Docker copies what's left; anything here never reaches the image.
+
+# Build output is regenerated inside the image - never send the host's copy.
+target/
+
+# Docs and tooling are for developers, not for the container.
+.git/
+.gitignore
+.gitattributes
+.github/
+.idea/
+*.iml
+*.md
+docs/
+postman/
+run-dev.ps1
+docker-compose.yaml
+mvnw.cmd
+
+# Never bake local secrets into an image.
+.env
+.env.*
+application-local.yaml
+application-local.yml

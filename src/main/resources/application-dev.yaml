@@ -23,3 +23,8 @@ pawzaar:
     # Generate a new one: openssl rand -base64 32
     secret: cGF3emFhci1kZXYtb25seS1zZWNyZXQta2V5LWNoYW5nZS1tZS1pbi1wcm9kdWN0aW9uLTAxMjM0NTY3ODk=
     access-token-validity-minutes: 30
+    refresh-token-validity-days: 7
+  web:
+    cors:
+      # The common local front-end dev servers (Vite default = 5173, CRA = 3000).
+      allowed-origins: http://localhost:5173,http://localhost:3000

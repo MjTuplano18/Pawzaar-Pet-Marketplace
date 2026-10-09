@@ -226,7 +226,7 @@ The plan has four phases. Do not start a phase until the previous one meets its 
 - [ ] Write `docker-compose.yml` with PostgreSQL, and connect Spring to it using environment variables
 - [ ] Add a `GET /api/v1/health` endpoint and confirm it works in the browser
 - [ ] Scaffold the frontend with `npm create vite@latest` (React + TypeScript)
-- [ ] Add a README with the run instructions and a GitHub Actions workflow that builds the backend
+- [x] Add a README with the run instructions and a GitHub Actions workflow that builds the backend
 
 ### Phase 1: MVP (weeks 2 to 10)
 
@@ -243,7 +243,7 @@ MVP done when:
 - [ ] A new user can register, log in, post a pet with photos, and see it in search
 - [ ] A user cannot edit or delete anyone else's listing (tested)
 - [ ] All list endpoints are paginated and the main filters use indexes
-- [ ] Tests run in GitHub Actions on every push
+- [x] Tests run in GitHub Actions on every push
 - [ ] The app is live on a public URL, and no secrets are in Git
 
 ### Phase 1.5: Hardening (weeks 11 to 12)
@@ -385,7 +385,7 @@ Work through this list in three passes: build it in now, finish it before the pu
 - [x] Ownership check in the service layer on every update and delete (user A gets 403 on user B's listing), with a test
 - [x] Return 401 (not 403) for anonymous requests to protected URLs
 - [x] Generic login error ("invalid email or password"); no hint about which part was wrong
-- [ ] Strict CORS allowlist (your frontend domain only), never `*` with credentials
+- [x] Strict CORS allowlist (your frontend domain only), never `*` with credentials
 - [ ] Request size limits set (`spring.servlet.multipart.max-file-size`, `max-request-size`, Tomcat max post size)
 - [x] Sensitive actuator endpoints not exposed; only health (and later metrics) behind authentication
 
@@ -411,7 +411,7 @@ Work through this list in three passes: build it in now, finish it before the pu
 
 - [ ] Rate limiting on login, register, post-listing, and report endpoints (Bucket4j), keyed by IP and by user
 - [ ] Account lockout or progressive delay after repeated failed logins
-- [ ] Refresh tokens stored hashed, rotated on use, revoked on logout and password change
+- [x] Refresh tokens stored hashed, rotated on use, revoked on logout (password-change revocation still to do)
 - [ ] Email verification before a user can post listings
 - [ ] Upload checks: type from file content (not extension), size and count limits, re-encode images, random storage keys, files served from a separate domain
 - [ ] Security headers: HSTS, `X-Content-Type-Options`, `Content-Security-Policy`, `X-Frame-Options`
@@ -442,8 +442,8 @@ Work through this list in three passes: build it in now, finish it before the pu
 
 - [ ] Unit tests for service rules; `@WebMvcTest` for status codes and security; Testcontainers for repositories and migrations
 - [x] Security tests: anonymous gets 401, wrong owner gets 403, hidden pet gets 404
-- [ ] CI runs tests and builds on every push; main branch deploys only when green
-- [ ] Multi-stage Dockerfile, non-root user, small JRE base image
+- [x] CI runs tests and builds on every push (main-branch deploy still to add)
+- [x] Multi-stage Dockerfile, non-root user, small JRE base image
 - [ ] Database backups enabled and a restore tested at least once
 
 ### Pass 3: add only when traffic demands it

@@ -19,3 +19,7 @@ pawzaar:
     # Throwaway 256-bit Base64 key used only in tests. Never deploy this value.
     secret: dGVzdC1vbmx5LXNlY3JldC1rZXktZG8tbm90LXVzZS1pbi1wcm9kdWN0aW9uLTAwMQ==
     access-token-validity-minutes: 30
+    refresh-token-validity-days: 7
+  web:
+    cors:
+      allowed-origins: http://localhost:5173
