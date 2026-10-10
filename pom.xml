@@ -146,6 +146,23 @@
 					</profiles>
 				</configuration>
 			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<!--
+					  Tests must be hermetic: no network, no cloud bucket, no credentials. A system
+					  property OUTRANKS an OS environment variable in Spring's property order, so
+					  this pins storage to the local disk even if the developer has
+					  PAWZAAR_STORAGE_TYPE=supabase in their shell. (A value in
+					  src/test/resources/application.yaml could NOT do this - env vars beat config
+					  files, which is exactly the trap this avoids.)
+					-->
+					<systemPropertyVariables>
+						<pawzaar.storage.type>local</pawzaar.storage.type>
+					</systemPropertyVariables>
+				</configuration>
+			</plugin>
 		</plugins>
 	</build>
 
