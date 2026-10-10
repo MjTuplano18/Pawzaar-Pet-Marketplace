@@ -1,5 +1,6 @@
 package com.pawzaar.config;
 
+import com.pawzaar.common.image.ImageProcessor;
 import com.pawzaar.common.image.ImageStorage;
 import com.pawzaar.common.image.ImageStorageProperties;
 import com.pawzaar.common.image.ImageValidator;
@@ -114,7 +115,9 @@ public class StorageConfig {
 
     @Bean
     public ImageValidator imageValidator(ImageStorageProperties properties) {
-        return new ImageValidator(properties.getMaxImageBytes());
+        ImageProcessor processor = new ImageProcessor(
+                properties.getMaxImageDimension(), properties.getMaxImagePixels());
+        return new ImageValidator(properties.getMaxImageBytes(), processor);
     }
 
     private static boolean isBlank(String value) {

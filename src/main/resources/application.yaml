@@ -39,6 +39,11 @@ pawzaar:
     type: ${PAWZAAR_STORAGE_TYPE:local}                  # local | supabase
     root: ${PAWZAAR_STORAGE_ROOT:uploads}                # used only when type=local
     max-image-bytes: ${PAWZAAR_MAX_IMAGE_BYTES:5242880}   # 5 MiB
+    # M1: pixel caps applied AFTER the byte-size check. Rejecting on the header (before decoding)
+    # is what stops a tiny "decompression bomb" from exhausting memory. 5000px / 25 MP is generous
+    # for a phone photo while staying safe.
+    max-image-dimension: ${PAWZAAR_MAX_IMAGE_DIMENSION:5000}
+    max-image-pixels: ${PAWZAAR_MAX_IMAGE_PIXELS:25000000}
     supabase:
       # Used only when type=supabase. All are secrets/config; set them on the host, never commit.
       url: ${SUPABASE_URL:}                              # https://<project-ref>.supabase.co

@@ -7,6 +7,7 @@ import com.pawzaar.pet.InvalidPetStatusException;           // "admin-only statu
 import com.pawzaar.pet.InvalidSortException;               // "bad sort field/order"    -> 400
 import com.pawzaar.pet.PetNotFoundException;               // "no pet with that id"     -> 404
 import com.pawzaar.common.image.ImageStorageException;        // storage backend failure  -> 502
+import com.pawzaar.common.image.ImageDimensionsTooLargeException; // pixel dimensions over cap -> 413
 import com.pawzaar.common.image.ImageTooLargeException;       // image over the size cap   -> 413
 import com.pawzaar.common.image.InvalidImageException;        // empty/not a real image    -> 400
 import com.pawzaar.pet.image.PetImageNotFoundException;    // "no image with that id"   -> 404
@@ -264,6 +265,18 @@ public class GlobalExceptionHandler {
                 ex.getMessage());
         problem.setTitle("Image too large");
         problem.setProperty("maxBytes", ex.getMaxBytes());
+        return problem;
+    }
+
+    // 413: the image bytes fit, but its PIXEL dimensions do not (M1 decompression-bomb guard).
+    @ExceptionHandler(ImageDimensionsTooLargeException.class)
+    public ProblemDetail handleImageDimensionsTooLarge(ImageDimensionsTooLargeException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.PAYLOAD_TOO_LARGE,  // 413
+                ex.getMessage());
+        problem.setTitle("Image dimensions too large");
+        problem.setProperty("width", ex.getWidth());
+        problem.setProperty("height", ex.getHeight());
         return problem;
     }
 

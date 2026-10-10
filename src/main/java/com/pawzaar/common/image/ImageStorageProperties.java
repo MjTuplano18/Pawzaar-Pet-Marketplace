@@ -38,6 +38,12 @@ public class ImageStorageProperties {
     /** Largest accepted image, in bytes. Defaults to 5 MiB. */
     private long maxImageBytes = 5L * 1024 * 1024;
 
+    /** Largest accepted image side, in pixels (M1 guards against decompression bombs). */
+    private int maxImageDimension = 5000;
+
+    /** Largest accepted total pixel count (width x height) (M1). */
+    private long maxImagePixels = 25_000_000L;
+
     /** Supabase Storage settings; only read when {@link #type} is {@link Type#SUPABASE}. */
     private final Supabase supabase = new Supabase();
 
@@ -63,6 +69,22 @@ public class ImageStorageProperties {
 
     public void setMaxImageBytes(long maxImageBytes) {
         this.maxImageBytes = maxImageBytes;
+    }
+
+    public int getMaxImageDimension() {
+        return maxImageDimension;
+    }
+
+    public void setMaxImageDimension(int maxImageDimension) {
+        this.maxImageDimension = maxImageDimension;
+    }
+
+    public long getMaxImagePixels() {
+        return maxImagePixels;
+    }
+
+    public void setMaxImagePixels(long maxImagePixels) {
+        this.maxImagePixels = maxImagePixels;
     }
 
     public Supabase getSupabase() {

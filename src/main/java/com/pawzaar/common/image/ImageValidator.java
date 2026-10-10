@@ -18,15 +18,20 @@ import java.util.Set;
  *       proof; sniffing the bytes is what stops someone uploading an executable renamed
  *       {@code cute.png}. The declared type and the sniffed type must also agree.</li>
  * </ol>
+ *
+ * <p>Once the bytes are trusted to be a real image, {@link ImageProcessor} normalises them (M1):
+ * pixel dimensions are capped and EXIF/GPS/XMP metadata is stripped before storage.
  */
 public class ImageValidator {
 
     private static final Set<String> ALLOWED_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
 
     private final long maxBytes;
+    private final ImageProcessor processor;
 
-    public ImageValidator(long maxBytes) {
+    public ImageValidator(long maxBytes, ImageProcessor processor) {
         this.maxBytes = maxBytes;
+        this.processor = processor;
     }
 
     /** Validates the file and returns the bytes, extension and verified MIME type to store. */
@@ -59,7 +64,10 @@ public class ImageValidator {
             // e.g. header says PNG but the bytes are a JPEG (or something else entirely).
             throw new UnsupportedImageTypeException(declared);
         }
-        return new ValidatedImage(data, extensionFor(kind), actualType);
+
+        // M1: cap pixel dimensions and strip EXIF/GPS/XMP before the bytes are stored.
+        byte[] normalised = processor.normalise(data, kind);
+        return new ValidatedImage(normalised, extensionFor(kind), actualType);
     }
 
     /** Reads the leading "magic" bytes and returns jpeg/png/webp, or null if none match. */

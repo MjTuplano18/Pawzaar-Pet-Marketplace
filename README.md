@@ -32,7 +32,9 @@ stateless JWT auth with refresh-token rotation, role-based authorization, automa
   **429** `problem+json` with a `Retry-After` header; spoofed `X-Forwarded-For` is ignored by default.
 - **Listing images** — owners upload JPEG/PNG/WebP photos, validated by declared type, size, **and
   magic bytes**; the cover appears on cards, all images on the detail page, and the bytes stream back
-  with a cache header. Served from local disk behind an `ImageStorage` interface (S3/CDN-ready).
+  with a cache header. Every upload is **re-encoded to strip EXIF/GPS metadata** and its **pixel
+  dimensions are capped** (a decompression-bomb guard). Served from local disk behind an
+  `ImageStorage` interface (S3/CDN-ready).
 - **Observability & docs** — Actuator health probes (liveness/readiness), Swagger UI (dev/test only),
   and structured logging: every response carries an `X-Request-Id` header that is also stamped into the
   server logs, 5xx errors / storage failures / auth failures are logged (never passwords or tokens).
