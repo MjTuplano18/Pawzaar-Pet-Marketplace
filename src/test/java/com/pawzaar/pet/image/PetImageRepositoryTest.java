@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -16,6 +17,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -98,5 +100,30 @@ class PetImageRepositoryTest {
         petRepository.flush();
 
         assertEquals(0, petImageRepository.countByPetId(pet.getId()));
+    }
+
+    @Test
+    void sortOrderIsUniquePerPet() {
+        // H4: two rows for the SAME pet may never claim the same sort_order, otherwise the cover
+        // (order 0) and the detail-page ordering become ambiguous. The DB enforces it (V11).
+        Pet pet = savedPet();
+        image(pet, "cover", 0);
+        petImageRepository.flush();
+
+        assertThrows(DataIntegrityViolationException.class, () ->
+                petImageRepository.saveAndFlush(
+                        PetImage.create(pet.getId(), "second-cover", "image/png", 128, 0)));
+    }
+
+    @Test
+    void theSameSortOrderIsFineForDifferentPets() {
+        // The constraint is per pet, not global: two pets each get their own order-0 cover.
+        Pet a = savedPet();
+        Pet b = savedPet();
+        image(a, "a-cover", 0);
+        image(b, "b-cover", 0);
+
+        assertEquals(1, petImageRepository.countByPetId(a.getId()));
+        assertEquals(1, petImageRepository.countByPetId(b.getId()));
     }
 }

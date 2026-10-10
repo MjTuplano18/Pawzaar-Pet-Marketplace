@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -52,9 +53,14 @@ public class PetImageService {
     }
 
     /**
-     * Validates the upload, stores the bytes, and records a row. The image is appended after any
-     * existing ones (its {@code sortOrder} is the current count), so the first upload becomes the
-     * cover.
+     * Validates the upload, stores the bytes, and records a row. The image is appended after the
+     * existing ones, so the first upload becomes the cover (order 0).
+     *
+     * <p>H4: the new order is the CURRENT MAXIMUM plus one, not the row count. After a delete the
+     * orders can be non-dense (e.g. 0 and 2), and using the count (2) would duplicate an existing
+     * order. {@code (pet_id, sort_order)} is also UNIQUE in the database (V11), so a collision -
+     * including two simultaneous uploads racing on the same max - is rejected rather than silently
+     * storing an ambiguous ordering.
      *
      * @throws com.pawzaar.pet.PetNotFoundException      if the listing does not exist
      * @throws com.pawzaar.pet.ForbiddenPetAccessException if the caller is not the owner
@@ -67,9 +73,8 @@ public class PetImageService {
         ValidatedImage validated = imageValidator.validate(file);
         String storageKey = petImageStorage.store(validated.data(), validated.extension());
 
-        // count is a decent "next index". Two truly concurrent uploads could claim the same order;
-        // harmless (the column is not unique) and not worth row locking for a portfolio project.
-        int sortOrder = (int) petImageRepository.countByPetId(petId);
+        List<PetImage> existing = petImageRepository.findByPetIdOrderBySortOrderAsc(petId);
+        int sortOrder = existing.isEmpty() ? 0 : existing.get(existing.size() - 1).getSortOrder() + 1;
         try {
             PetImage saved = petImageRepository.save(PetImage.create(
                     petId, storageKey, validated.contentType(), validated.data().length, sortOrder));
@@ -89,6 +94,10 @@ public class PetImageService {
     /**
      * Deletes the row and then the file.
      *
+     * <p>H4: after removing the row the survivors are renumbered to a dense 0..n-1 sequence, so the
+     * cover (order 0) is restored when the cover itself was deleted and no gaps are left for a later
+     * upload's max+1 to trip over.
+     *
      * @throws PetNotFoundException       if the listing does not exist
      * @throws com.pawzaar.pet.ForbiddenPetAccessException if the caller is not the owner
      * @throws PetImageNotFoundException  if the image does not belong to this listing
@@ -102,6 +111,17 @@ public class PetImageService {
                 .orElseThrow(() -> new PetImageNotFoundException(imageId));
 
         petImageRepository.delete(image);
+
+        // Reassign contiguous orders to the remaining images (the delete above is flushed first, so
+        // this query sees only the survivors).
+        int next = 0;
+        for (PetImage survivor : petImageRepository.findByPetIdOrderBySortOrderAsc(petId)) {
+            if (survivor.getSortOrder() != next) {
+                survivor.reorder(next);
+            }
+            next++;
+        }
+
         petImageStorage.delete(image.getStorageKey());
     }
 

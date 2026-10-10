@@ -68,6 +68,15 @@ public class PetImage {
         return image;
     }
 
+    /**
+     * Changes this image's position within its listing (H4). Used when an earlier image is deleted:
+     * the survivors are renumbered so the orders stay contiguous and 0 remains the cover. Only the
+     * service calls this, always inside the transaction that owns the entity.
+     */
+    public void reorder(int sortOrder) {
+        this.sortOrder = sortOrder;
+    }
+
     @PrePersist
     void onCreate() {
         this.createdAt = Instant.now();

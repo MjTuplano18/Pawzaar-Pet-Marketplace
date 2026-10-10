@@ -23,6 +23,7 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -62,7 +63,7 @@ class PetImageServiceTest {
         when(petRepository.findById(PET_ID)).thenReturn(Optional.of(pet));
         when(imageValidator.validate(any())).thenReturn(new ValidatedImage(new byte[]{1, 2, 3}, "png", "image/png"));
         when(imageStorage.store(any(), eq("png"))).thenReturn("storage-key");
-        when(petImageRepository.countByPetId(PET_ID)).thenReturn(0L);
+        when(petImageRepository.findByPetIdOrderBySortOrderAsc(PET_ID)).thenReturn(List.of());
         when(petImageRepository.save(any(PetImage.class))).thenReturn(imageWithId(PET_ID, IMAGE_ID, "storage-key", 0));
 
         PetImageResponse response = petImageService.upload(PET_ID, OWNER_ID, anyFile());
@@ -73,6 +74,29 @@ class PetImageServiceTest {
         assertEquals(0, response.sortOrder());
         verify(imageStorage).store(any(), eq("png"));
         verify(petImageRepository).save(any(PetImage.class));
+    }
+
+    @Test
+    void uploadAppendsAfterTheHighestSortOrderNotTheCount() {
+        // H4: an earlier delete left a GAP (orders 0 and 2, no 1). Using the row count (2) as the
+        // next order would collide with the existing 2; the next order must be max+1 = 3.
+        Pet pet = petOwnedBy(OWNER_ID, PetStatus.ACTIVE);
+        when(petRepository.findById(PET_ID)).thenReturn(Optional.of(pet));
+        when(imageValidator.validate(any())).thenReturn(new ValidatedImage(new byte[]{1}, "png", "image/png"));
+        when(imageStorage.store(any(), eq("png"))).thenReturn("storage-key");
+        when(petImageRepository.findByPetIdOrderBySortOrderAsc(PET_ID)).thenReturn(List.of(
+                imageWithId(PET_ID, UUID.randomUUID(), "k0", 0),
+                imageWithId(PET_ID, UUID.randomUUID(), "k2", 2)));
+        // Echo the saved entity back so the response reflects the ACTUAL computed order.
+        when(petImageRepository.save(any(PetImage.class))).thenAnswer(invocation -> {
+            PetImage saved = invocation.getArgument(0);
+            setField(saved, "id", IMAGE_ID);
+            return saved;
+        });
+
+        PetImageResponse response = petImageService.upload(PET_ID, OWNER_ID, anyFile());
+
+        assertEquals(3, response.sortOrder());
     }
 
     @Test
@@ -92,7 +116,7 @@ class PetImageServiceTest {
         when(petRepository.findById(PET_ID)).thenReturn(Optional.of(petOwnedBy(OWNER_ID, PetStatus.ACTIVE)));
         when(imageValidator.validate(any())).thenReturn(new ValidatedImage(new byte[]{1, 2, 3}, "png", "image/png"));
         when(imageStorage.store(any(), eq("png"))).thenReturn("storage-key");
-        when(petImageRepository.countByPetId(PET_ID)).thenReturn(0L);
+        when(petImageRepository.findByPetIdOrderBySortOrderAsc(PET_ID)).thenReturn(List.of());
         when(petImageRepository.save(any(PetImage.class))).thenThrow(new RuntimeException("db down"));
 
         assertThrows(RuntimeException.class,
@@ -109,11 +133,30 @@ class PetImageServiceTest {
         when(petRepository.findById(PET_ID)).thenReturn(Optional.of(petOwnedBy(OWNER_ID, PetStatus.ACTIVE)));
         PetImage image = imageWithId(PET_ID, IMAGE_ID, "storage-key", 0);
         when(petImageRepository.findByIdAndPetId(IMAGE_ID, PET_ID)).thenReturn(Optional.of(image));
+        when(petImageRepository.findByPetIdOrderBySortOrderAsc(PET_ID)).thenReturn(List.of());
 
         petImageService.delete(PET_ID, IMAGE_ID, OWNER_ID);
 
         verify(petImageRepository).delete(image);
         verify(imageStorage).delete("storage-key");
+    }
+
+    @Test
+    void deleteRenumbersTheSurvivorsSoTheCoverIsRestored() {
+        // H4: deleting the cover (order 0) left orders 1 and 2 with no 0 - the card had no image.
+        // The survivors must be renumbered to 0 and 1 so order 0 is the cover again.
+        when(petRepository.findById(PET_ID)).thenReturn(Optional.of(petOwnedBy(OWNER_ID, PetStatus.ACTIVE)));
+        PetImage cover = imageWithId(PET_ID, IMAGE_ID, "cover-key", 0);
+        PetImage second = imageWithId(PET_ID, UUID.randomUUID(), "k1", 1);
+        PetImage third = imageWithId(PET_ID, UUID.randomUUID(), "k2", 2);
+        when(petImageRepository.findByIdAndPetId(IMAGE_ID, PET_ID)).thenReturn(Optional.of(cover));
+        when(petImageRepository.findByPetIdOrderBySortOrderAsc(PET_ID)).thenReturn(List.of(second, third));
+
+        petImageService.delete(PET_ID, IMAGE_ID, OWNER_ID);
+
+        assertEquals(0, second.getSortOrder());
+        assertEquals(1, third.getSortOrder());
+        verify(imageStorage).delete("cover-key");
     }
 
     @Test
