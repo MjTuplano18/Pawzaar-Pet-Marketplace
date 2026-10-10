@@ -33,7 +33,7 @@ reader who knows core Java and OOP — but not Spring Boot — can follow along.
 
 A **Philippines-focused pet marketplace API**. Buyers browse pets for sale; sellers post listings.
 
-Currently implemented (through Step 10):
+Currently implemented (the table tracks how far the build has come):
 
 | Capability | Status |
 |---|---|
@@ -42,7 +42,7 @@ Currently implemented (through Step 10):
 | **Search & filtering** on `GET /pets` (optional filters + sort allowlist) | ✅ done (Step 10) |
 | Pet detail with a clean 404 (`GET /pets/{id}`) | ✅ done |
 | One consistent error format (RFC 9457) | ✅ done |
-| Automated tests (web slice + DB slice + unit) | ✅ 221 tests |
+| Automated tests (web slice + DB slice + unit) | ✅ 223 tests |
 | User registration with hashed passwords | ✅ done |
 | Login + JWT issuance, token verification on protected routes | ✅ done (Step 6.3) |
 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ done |
@@ -75,12 +75,18 @@ Currently implemented (through Step 10):
 | Flyway | managed by Boot | Runs versioned SQL migrations in order, once. |
 | Jackson | **3** (Boot 4's default) | Turns Java objects into JSON (and back). |
 | PostgreSQL | **17** in Docker | The database. Host port **5433**. |
+| springdoc-openapi | **3.1.1** | Generates the OpenAPI spec + Swagger UI. 3.x targets Boot 4; 2.x targets Boot 3. |
 | Maven | 3.9.16 (via `mvnw`) | Build + dependency management + test runner. |
 
 > ⚠️ **Boot 4 moved packages.** Test annotations live in new packages (`@WebMvcTest` is now
 > `org.springframework.boot.webmvc.test.autoconfigure`, `@DataJpaTest` is
 > `org.springframework.boot.data.jpa.test.autoconfigure`). Always copy imports from *this*
 > project, not from a Boot 3 tutorial.
+
+> ⚠️ **Boot 4 renamed starters too.** `spring-boot-starter-oauth2-resource-server` is deprecated in
+> favor of `spring-boot-starter-security-oauth2-resource-server`, and third-party libraries built for
+> Boot 3 (Spring Framework 6) must be replaced with their Boot 4 (Framework 7) line — springdoc 2.x →
+> 3.x is the example here.
 
 ---
 
@@ -132,7 +138,7 @@ PawzaarApiApplication.main()
    │                            starter-webmvc   → embedded Tomcat + Jackson
    │                            starter-data-jpa → Hibernate + HikariCP connection pool
    │                            starter-security → the security filter chain
-   │                            starter-flyway   → run pending migrations (V1 … V7)
+   │                            starter-flyway   → run pending migrations (V1 … V12)
    │
    ├─ ③ SCHEMA VALIDATION       ddl-auto: validate → "does Pet match the pets table?"
    │                            (any mismatch → startup FAILS loudly)
@@ -210,11 +216,16 @@ com.pawzaar
 ├── PawzaarApiApplication.java    entry point
 ├── common/                      cross-cutting code (not tied to one feature)
 │   ├── HealthController.java     liveness probe
-│   └── GlobalExceptionHandler.java   the ONE place exceptions become HTTP responses
+│   ├── GlobalExceptionHandler.java   the ONE place exceptions become HTTP responses
+│   ├── email/                    EmailSender + LoggingEmailSender (M4d)
+│   ├── image/                    storage (Local/Supabase) + validation + cleanup
+│   └── ratelimit/                per-IP token-bucket filter
 ├── config/                      framework wiring
 │   ├── SecurityConfig.java       who may access what
 │   ├── CorsConfig.java           which browser origins may call the API
 │   ├── JwtConfig.java            issue + verify tokens, token lifetimes
+│   ├── EmailConfig.java          the EmailSender bean (backs off if one exists)
+│   ├── OpenApiConfig.java        OpenAPI metadata + the bearer security scheme
 │   └── PasswordEncoderConfig.java    how passwords are hashed
 └── pet/                         ── the "pet" feature ──
     ├── Pet.java                 entity (how a pet is STORED)
@@ -236,12 +247,16 @@ com.pawzaar
 └── user/                         ── the "user" feature (Step 6) ──
     ├── User.java, Role.java
     ├── RefreshToken.java        entity: stored (hashed) refresh tokens
+    ├── EmailVerificationToken.java  entity: single-use, hashed verification tokens (M4d)
     ├── EmailAlreadyRegisteredException.java
     ├── InvalidCredentialsException.java
     ├── InvalidRefreshTokenException.java
-    ├── dto/       RegisterRequest, UserResponse, LoginRequest, RefreshRequest, TokenResponse
-    ├── repository/ UserRepository.java, RefreshTokenRepository.java
-    ├── service/    AuthService.java     (register, login, refresh, logout)
+    ├── InvalidVerificationTokenException.java
+    ├── dto/       RegisterRequest, UserResponse, LoginRequest, RefreshRequest,
+    │              VerifyEmailRequest, TokenResponse
+    ├── repository/ UserRepository.java, RefreshTokenRepository.java,
+    │              EmailVerificationTokenRepository.java
+    ├── service/    AuthService.java     (register, login, refresh, logout, verify email)
     └── controller/ AuthController.java
 ```
 
@@ -592,8 +607,9 @@ a send). Both return `204`. See §6.27 for the full flow.
 
 ### 6.19 `config/JwtConfig` — issuing and verifying tokens
 
-Built on Spring Security's own support (`spring-boot-starter-oauth2-resource-server`), so **no
-hand-written filters**. Six beans:
+Built on Spring Security's own support (`spring-boot-starter-security-oauth2-resource-server` — Boot 4
+renamed the old `spring-boot-starter-oauth2-resource-server`, now deprecated), so **no hand-written
+filters**. Six beans:
 
 | Bean | Job |
 |---|---|
@@ -1111,7 +1127,7 @@ Controller  →  returns PetResponse (DTO)     ← entities never reach here
 | `PetImageServiceTest` (plain Mockito) | nothing | ❌ | owner-only upload/delete, file cleanup when the row write fails, hiding a non-`ACTIVE` listing's images |
 | `PawzaarApiApplicationTests` (`@SpringBootTest`) | everything | ✅ | the whole context starts |
 
-Current total: **221 tests**, all green with `mvn test`.
+Current total: **223 tests**, all green with `mvn test`.
 
 ```bash
 .\mvnw.cmd test                                            # all tests
