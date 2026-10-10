@@ -389,7 +389,7 @@ public class AuthService {
         Instant now = Instant.now();
 
         JwtClaimsSet claims = JwtClaimsSet.builder()
-                .issuer("pawzaar")
+                .issuer(com.pawzaar.config.JwtConfig.ISSUER)   // single source of truth (H10)
                 .issuedAt(now)
                 .expiresAt(now.plus(accessTokenValidity))
                 .subject(user.getId().toString())        // "sub": the standard subject claim

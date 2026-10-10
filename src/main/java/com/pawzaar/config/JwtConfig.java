@@ -13,6 +13,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
 // Maps JWT claims -> Spring Security "authorities" (ROLE_USER / ROLE_SELLER).
@@ -48,6 +49,13 @@ import java.util.Base64;
 @Configuration
 public class JwtConfig {
 
+    /**
+     * The one issuer value for tokens this service mints and accepts. Kept as a single constant so
+     * the issuing code ({@code AuthService}) and the validating decoder below can never drift apart
+     * (H10). A token whose {@code iss} is not exactly this is rejected.
+     */
+    public static final String ISSUER = "pawzaar";
+
     // Injected from application.yaml -> pawzaar.jwt.secret (which reads the JWT_SECRET env var).
     @Value("${pawzaar.jwt.secret}")
     private String secret;
@@ -63,12 +71,26 @@ public class JwtConfig {
 
     /**
      * Turns the Base64 string into the raw HMAC key bytes.
-     * HS256 requires at least 256 bits (32 bytes) - a short key is silently rejected by the
-     * library, which is exactly the protection you want.
+     * HS256 requires at least 256 bits (32 bytes) of key material.
+     *
+     * <p>H10: this method now FAILS FAST. Nimbus rejects a short key too, but only lazily - when the
+     * first token is encode/decode-d at runtime (i.e. on someone's login). Checking here turns a
+     * misconfigured {@code JWT_SECRET} into a startup failure the deploy catches, not a live outage.
      */
     @Bean
     public SecretKey jwtSecretKey() {
-        byte[] keyBytes = Base64.getDecoder().decode(secret);
+        byte[] keyBytes;
+        try {
+            keyBytes = Base64.getDecoder().decode(secret);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException(
+                    "pawzaar.jwt.secret (JWT_SECRET) must be valid Base64", e);
+        }
+        if (keyBytes.length < 32) {
+            throw new IllegalStateException(
+                    "pawzaar.jwt.secret (JWT_SECRET) must decode to at least 32 bytes (256 bits) for "
+                            + "HS256; got " + keyBytes.length + " bytes");
+        }
         return new SecretKeySpec(keyBytes, "HmacSHA256");
     }
 
@@ -82,12 +104,18 @@ public class JwtConfig {
      * Verifies tokens on every protected request (used by Spring Security automatically).
      * It checks: signature valid, algorithm is HS256 (never trust the header blindly), and
      * exp/iat timestamps make sense.
+     *
+     * <p>H10: it ALSO requires the {@code iss} claim to be {@link #ISSUER}. The default validator
+     * only checks timestamps, so a token signed with our key but carrying a different issuer would
+     * otherwise be accepted; pinning the issuer removes that gap.
      */
     @Bean
     public JwtDecoder jwtDecoder(SecretKey jwtSecretKey) {
-        return NimbusJwtDecoder.withSecretKey(jwtSecretKey)
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSecretKey)
                 .macAlgorithm(MacAlgorithm.HS256)   // pin the algorithm: blocks "alg: none" attacks
                 .build();
+        decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(ISSUER));
+        return decoder;
     }
 
     /**
