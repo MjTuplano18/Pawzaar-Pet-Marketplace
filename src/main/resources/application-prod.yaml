@@ -50,3 +50,12 @@ pawzaar:
       profile-bucket: ${SUPABASE_PROFILE_BUCKET}
       document-bucket: ${SUPABASE_DOCUMENT_BUCKET}
       service-key: ${SUPABASE_SERVICE_KEY}
+
+# H7: the OpenAPI document describes every route, parameter and schema - a map for an attacker.
+# Disable (do not merely secure) both in production so /v3/api-docs and /swagger-ui return 404
+# and there is nothing to enumerate. They stay available in dev/test for local work.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
