@@ -14,6 +14,7 @@ import com.pawzaar.pet.service.PetImageService;
 import com.pawzaar.pet.service.PetService;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -23,6 +24,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -71,6 +73,7 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/v1")
+@Validated
 public class PetController {
 
     /**
@@ -97,7 +100,8 @@ public class PetController {
     @GetMapping("/pets")
     public PagedResponse<PetSummary> listPets(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "20")
+            @Min(value = 1, message = "size must be at least 1") int size,
             @RequestParam(required = false) Species species,
             @RequestParam(required = false) String province,
             @RequestParam(required = false) String city,
@@ -212,7 +216,8 @@ public class PetController {
     @PreAuthorize("isAuthenticated()")
     public PagedResponse<PetSummary> getMyPets(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "20")
+            @Min(value = 1, message = "size must be at least 1") int size,
             @AuthenticationPrincipal Jwt jwt) {
 
         UUID sellerId = UUID.fromString(jwt.getSubject());

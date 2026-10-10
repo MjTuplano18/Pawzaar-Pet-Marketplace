@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -127,5 +128,23 @@ class AuthControllerTest {
                         .content("{\"refreshToken\":\"\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.title").value("Validation failed"));
+    }
+
+    @Test
+    void registerLosingTheUniqueConstraintRaceYields409ProblemDetail() throws Exception {
+        // Two registrations with the same email can both pass the service's pre-check; the loser
+        // then hits the users.email unique constraint. That DataIntegrityViolationException must
+        // become a 409 in the one error format, not a 500.
+        when(authService.register(any()))
+                .thenThrow(new DataIntegrityViolationException("duplicate key value violates unique constraint"));
+
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"ana@email.com","password":"pawzaar123","displayName":"Ana Reyes"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Data conflict"));
     }
 }

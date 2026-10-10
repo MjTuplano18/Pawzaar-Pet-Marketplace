@@ -26,6 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
@@ -216,6 +217,89 @@ class PetControllerTest {
         Sort.Order order = captor.getValue().getSort().getOrderFor("createdAt");
         assertNotNull(order);
         assertEquals(Sort.Direction.DESC, order.getDirection());
+    }
+
+    // ── H9: invalid input is a 400 (or 409), never a 500 ─────────────────────────
+
+    @Test
+    void listWithZeroSizeYields400ProblemDetail() throws Exception {
+        // PageRequest.of rejects a size < 1; that used to escape as a 500. It must be a 400 and
+        // must never reach the service.
+        mockMvc.perform(get("/api/v1/pets").param("size", "0"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+
+        org.mockito.Mockito.verifyNoInteractions(petService);
+    }
+
+    @Test
+    void listWithNegativeSizeYields400ProblemDetail() throws Exception {
+        mockMvc.perform(get("/api/v1/pets").param("size", "-5"))
+                .andExpect(status().isBadRequest());
+
+        org.mockito.Mockito.verifyNoInteractions(petService);
+    }
+
+    @Test
+    void createWithPriceTooLargeForTheColumnYields400() throws Exception {
+        // NUMERIC(10,2) holds 8 integer digits; 10 must be rejected by validation, not blow up
+        // as a numeric overflow on insert.
+        String body = """
+                {"title":"Pup","species":"DOG","breed":"Aspin","ageMonths":3,
+                 "price":1234567890.00,"description":"x","city":"Manila",
+                 "province":"Metro Manila","sex":"MALE"}
+                """;
+
+        mockMvc.perform(post("/api/v1/pets")
+                        .with(jwtFor(OWNER_ID, "USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation failed"));
+
+        org.mockito.Mockito.verifyNoInteractions(petService);
+    }
+
+    @Test
+    void createWithoutAgeMonthsYields400() throws Exception {
+        // A primitive int would silently become 0 for an omitted field; ageMonths is an Integer
+        // with @NotNull so the omission is a 400 instead.
+        String body = """
+                {"title":"Pup","species":"DOG","breed":"Aspin",
+                 "price":1500.00,"description":"x","city":"Manila",
+                 "province":"Metro Manila","sex":"MALE"}
+                """;
+
+        mockMvc.perform(post("/api/v1/pets")
+                        .with(jwtFor(OWNER_ID, "USER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation failed"));
+
+        org.mockito.Mockito.verifyNoInteractions(petService);
+    }
+
+    @Test
+    void unexpectedServiceErrorYields500ProblemDetail() throws Exception {
+        // The catch-all handler keeps even an unforeseen error in the one error format.
+        when(petService.listPets(any(), any())).thenThrow(new RuntimeException("boom"));
+
+        mockMvc.perform(get("/api/v1/pets"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Internal server error"));
+    }
+
+    @Test
+    void dataIntegrityViolationYields409ProblemDetail() throws Exception {
+        when(petService.listPets(any(), any()))
+                .thenThrow(new DataIntegrityViolationException("duplicate key"));
+
+        mockMvc.perform(get("/api/v1/pets"))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Data conflict"));
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.pawzaar.pet.dto;
 
 import com.pawzaar.pet.PetStatus;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -26,12 +27,14 @@ public record PetUpdateRequest(
         @Size(max = 100, message = "breed must be at most 100 characters")
         String breed,
 
+        @NotNull(message = "ageMonths is required")
         @Min(value = 0, message = "ageMonths must be 0 or more")
         @Max(value = 360, message = "ageMonths must be at most 360")
-        int ageMonths,
+        Integer ageMonths,
 
         @NotNull(message = "price is required")
         @DecimalMin(value = "0.00", message = "price must be 0 or more")
+        @Digits(integer = 8, fraction = 2, message = "price must have at most 8 digits before the decimal point")
         BigDecimal price,
 
         @Size(max = 5000, message = "description must be at most 5000 characters")

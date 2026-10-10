@@ -18,6 +18,7 @@ import com.pawzaar.user.InvalidRefreshTokenException;      // "refresh token bad
 import com.pawzaar.user.UserNotFoundException;             // "user no longer exists"   -> 404
 
 // === Spring's HTTP layer ===
+import org.springframework.dao.DataIntegrityViolationException;     // unique/FK clash      -> 409
 import org.springframework.dao.OptimisticLockingFailureException;  // @Version race        -> 409
 import org.springframework.security.access.AccessDeniedException;  // @PreAuthorize denied -> 403
 import org.springframework.http.HttpHeaders;    // well-known header names (Retry-After)
@@ -25,6 +26,7 @@ import org.springframework.http.HttpStatus;      // enum of HTTP codes: NOT_FOUN
 import org.springframework.http.ProblemDetail;   // Spring's built-in RFC 9457 "problem details" object
 import org.springframework.http.ResponseEntity;  // lets a handler set status + headers + body
 import org.springframework.http.converter.HttpMessageNotReadableException;  // malformed JSON -> 400
+import org.springframework.web.ErrorResponse;     // framework errors that already carry a status
 import org.springframework.web.HttpMediaTypeNotSupportedException;          // wrong content-type -> 415
 import org.springframework.web.HttpRequestMethodNotSupportedException;      // wrong verb     -> 405
 import org.springframework.web.bind.MethodArgumentNotValidException;  // thrown by @Valid failures
@@ -32,6 +34,10 @@ import org.springframework.web.bind.annotation.ExceptionHandler;     // "this ex
 import org.springframework.web.bind.annotation.RestControllerAdvice;  // applies to ALL controllers
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;  // bad UUID -> 400
 import org.springframework.web.multipart.MaxUploadSizeExceededException;  // body over multipart limit -> 413
+
+// @Valid on a @RequestParam/@PathVariable is method validation, which throws this (not MethodArgumentNotValidException).
+import jakarta.validation.ConstraintViolationException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;  // unmapped path -> 404
 
 import java.util.List;  // needed for the errors array we attach to validation problems
 
@@ -345,6 +351,76 @@ public class GlobalExceptionHandler {
                 "The resource was modified by someone else; reload it and try again");
         problem.setTitle("Concurrent modification");
         return problem;
+    }
+
+    // 400 Bad Request: a validated @RequestParam / @PathVariable was out of range (e.g. ?size=0).
+    // Method validation throws ConstraintViolationException - a DIFFERENT type from the
+    // MethodArgumentNotValidException raised for @RequestBody - so it needs its own handler to
+    // stay in the one error format instead of escaping as a 500.
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ProblemDetail handleConstraintViolation(ConstraintViolationException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,        // 400
+                "One or more request parameters are invalid");
+        problem.setTitle("Validation failed");
+        problem.setProperty("errors", ex.getConstraintViolations().stream()
+                .map(v -> new FieldProblem(lastPathNode(v.getPropertyPath().toString()), v.getMessage()))
+                .toList());
+        return problem;
+    }
+
+    // 409 Conflict: a database constraint rejected an otherwise well-formed write. The classic case
+    // is two registrations racing on the same email: both pass the service's pre-check, then the
+    // unique index rejects the loser. Without this handler that became a 500 (H9).
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ProblemDetail handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,           // 409
+                "The request conflicts with data that already exists");
+        problem.setTitle("Data conflict");
+        return problem;
+    }
+
+    // 404: no controller or static resource matched the path. Handled explicitly so the catch-all
+    // below can never turn an unmapped URL into a 500.
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ProblemDetail handleNoResourceFound(NoResourceFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,          // 404
+                "No resource exists at " + ex.getResourcePath());
+        problem.setTitle("Not found");
+        return problem;
+    }
+
+    /**
+     * The catch-all: any exception with no more specific handler above.
+     *
+     * <p>Two things matter here:
+     * <ol>
+     *   <li>If the exception already carries an HTTP status ({@link ErrorResponse} - e.g. a missing
+     *       required request parameter, which Spring knows is a 400), keep that status. Only a
+     *       genuinely unexpected failure becomes a 500, so this handler cannot accidentally
+     *       downgrade a framework 4xx into a 500.</li>
+     *   <li>The 500 message is deliberately generic: an internal error must not leak stack details
+     *       to the client.</li>
+     * </ol>
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ProblemDetail> handleUnexpected(Exception ex) {
+        if (ex instanceof ErrorResponse errorResponse) {
+            return ResponseEntity.status(errorResponse.getStatusCode()).body(errorResponse.getBody());
+        }
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.INTERNAL_SERVER_ERROR,  // 500
+                "An unexpected error occurred");
+        problem.setTitle("Internal server error");
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(problem);
+    }
+
+    /** "listPets.size" -> "size": the field a client can act on, for the errors array. */
+    private static String lastPathNode(String propertyPath) {
+        int dot = propertyPath.lastIndexOf('.');
+        return dot >= 0 ? propertyPath.substring(dot + 1) : propertyPath;
     }
 
     /**
