@@ -77,8 +77,14 @@ public class ImageStorageProperties {
         /** Project base URL, e.g. {@code https://abcdefgh.supabase.co} (no trailing slash). */
         private String url = "";
 
-        /** Bucket that holds the images. Keep it private; the API proxies reads. */
+        /** Bucket that holds pet listing images. Keep all buckets private; the API proxies reads. */
         private String bucket = "pawzaar-images";
+
+        /** Bucket for user avatars (profile pictures). */
+        private String profileBucket = "pawzaar-user-profile";
+
+        /** Bucket for pet documents (vaccine cards, vet records, ...). */
+        private String documentBucket = "pawzaar-docs";
 
         /** Service-role key used as the bearer token. Bypasses row-level security - server only. */
         private String serviceKey = "";
@@ -97,6 +103,22 @@ public class ImageStorageProperties {
 
         public void setBucket(String bucket) {
             this.bucket = bucket;
+        }
+
+        public String getProfileBucket() {
+            return profileBucket;
+        }
+
+        public void setProfileBucket(String profileBucket) {
+            this.profileBucket = profileBucket;
+        }
+
+        public String getDocumentBucket() {
+            return documentBucket;
+        }
+
+        public void setDocumentBucket(String documentBucket) {
+            this.documentBucket = documentBucket;
         }
 
         public String getServiceKey() {

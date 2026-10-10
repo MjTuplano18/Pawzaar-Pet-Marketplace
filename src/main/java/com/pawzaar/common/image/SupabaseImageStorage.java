@@ -42,6 +42,11 @@ public class SupabaseImageStorage implements ImageStorage {
         this.bucket = bucket;
     }
 
+    /** The bucket this store writes to (e.g. {@code pawzaar-images}). Exposed for tests/debugging. */
+    public String getBucket() {
+        return bucket;
+    }
+
     @Override
     public String store(byte[] data, String extension) {
         String key = UUID.randomUUID().toString().replace("-", "") + "." + extension;

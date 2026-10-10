@@ -40,7 +40,7 @@ class SupabaseImageStorageIT {
         properties.getSupabase().setBucket(System.getenv("SUPABASE_BUCKET"));
         properties.getSupabase().setServiceKey(System.getenv("SUPABASE_SERVICE_KEY"));
 
-        ImageStorage storage = new StorageConfig().imageStorage(properties);
+        ImageStorage storage = new StorageConfig().petImageStorage(properties);
 
         String key = storage.store(ONE_PIXEL_PNG, "png");
         try {

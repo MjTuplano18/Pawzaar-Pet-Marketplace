@@ -28,6 +28,11 @@ public class LocalImageStorage implements ImageStorage {
         this.root = root.toAbsolutePath().normalize();
     }
 
+    /** The directory files are written to. Exposed for tests/debugging. */
+    public Path getRoot() {
+        return root;
+    }
+
     @Override
     public String store(byte[] data, String extension) {
         String key = UUID.randomUUID().toString().replace("-", "") + "." + extension;

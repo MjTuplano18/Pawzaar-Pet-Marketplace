@@ -36,4 +36,6 @@ pawzaar:
     supabase:
       url: ${SUPABASE_URL}
       bucket: ${SUPABASE_BUCKET}
+      profile-bucket: ${SUPABASE_PROFILE_BUCKET}
+      document-bucket: ${SUPABASE_DOCUMENT_BUCKET}
       service-key: ${SUPABASE_SERVICE_KEY}

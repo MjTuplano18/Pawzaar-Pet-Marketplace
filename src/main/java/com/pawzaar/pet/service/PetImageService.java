@@ -13,6 +13,7 @@ import com.pawzaar.common.image.ServedImage;
 import com.pawzaar.common.image.ValidatedImage;
 import com.pawzaar.pet.repository.PetRepository;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -34,16 +35,19 @@ public class PetImageService {
 
     private final PetRepository petRepository;
     private final PetImageRepository petImageRepository;
-    private final ImageStorage imageStorage;
+    private final ImageStorage petImageStorage;
     private final ImageValidator imageValidator;
 
     public PetImageService(PetRepository petRepository,
                            PetImageRepository petImageRepository,
-                           ImageStorage imageStorage,
+                           // @Qualifier picks WHICH of the three ImageStorage beans this service gets.
+                           // Here: the bean named "petImageStorage" (the pet photos bucket). Without
+                           // it, Spring would find 3 candidates of the same type and refuse to start.
+                           @Qualifier("petImageStorage") ImageStorage petImageStorage,
                            ImageValidator imageValidator) {
         this.petRepository = petRepository;
         this.petImageRepository = petImageRepository;
-        this.imageStorage = imageStorage;
+        this.petImageStorage = petImageStorage;
         this.imageValidator = imageValidator;
     }
 
@@ -61,7 +65,7 @@ public class PetImageService {
         PetService.checkOwnership(pet, callerId);
 
         ValidatedImage validated = imageValidator.validate(file);
-        String storageKey = imageStorage.store(validated.data(), validated.extension());
+        String storageKey = petImageStorage.store(validated.data(), validated.extension());
 
         // count is a decent "next index". Two truly concurrent uploads could claim the same order;
         // harmless (the column is not unique) and not worth row locking for a portfolio project.
@@ -77,7 +81,7 @@ public class PetImageService {
         } catch (RuntimeException e) {
             // The database write failed: remove the file we just wrote so it does not become an
             // orphan the app can never reach.
-            imageStorage.delete(storageKey);
+            petImageStorage.delete(storageKey);
             throw e;
         }
     }
@@ -98,7 +102,7 @@ public class PetImageService {
                 .orElseThrow(() -> new PetImageNotFoundException(imageId));
 
         petImageRepository.delete(image);
-        imageStorage.delete(image.getStorageKey());
+        petImageStorage.delete(image.getStorageKey());
     }
 
     /**
@@ -117,7 +121,7 @@ public class PetImageService {
             throw new PetNotFoundException(petId);
         }
 
-        return new ServedImage(imageStorage.load(image.getStorageKey()), image.getContentType());
+        return new ServedImage(petImageStorage.load(image.getStorageKey()), image.getContentType());
     }
 
     private Pet requirePet(UUID petId) {
