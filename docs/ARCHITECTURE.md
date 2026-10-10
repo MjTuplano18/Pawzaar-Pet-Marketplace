@@ -42,10 +42,11 @@ Currently implemented (through Step 10):
 | **Search & filtering** on `GET /pets` (optional filters + sort allowlist) | ✅ done (Step 10) |
 | Pet detail with a clean 404 (`GET /pets/{id}`) | ✅ done |
 | One consistent error format (RFC 9457) | ✅ done |
-| Automated tests (web slice + DB slice + unit) | ✅ 208 tests |
+| Automated tests (web slice + DB slice + unit) | ✅ 221 tests |
 | User registration with hashed passwords | ✅ done |
 | Login + JWT issuance, token verification on protected routes | ✅ done (Step 6.3) |
 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ done |
+| **Email verification** (single-use token, `POST /auth/verify-email`) | ✅ done |
 | Seller endpoints that use the token for **authorization** (ownership) | ✅ done (Step 7) |
 | `USER` → `SELLER` promotion on first listing | ✅ done |
 | **Role-based authorization** via `@PreAuthorize` (seller-only writes) | ✅ done (Step 9) |
@@ -585,6 +586,10 @@ public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest
 `@Valid` (check the rules) + `@RequestBody` (parse the JSON) + `201 Created` with a `Location`
 header — the industry-standard answer for "I created something".
 
+The same controller exposes the two M4d verification routes: `POST /verify-email` (public — the
+token is the credential) and `POST /verify-email/resend` (authenticated — only the owner can trigger
+a send). Both return `204`. See §6.27 for the full flow.
+
 ### 6.19 `config/JwtConfig` — issuing and verifying tokens
 
 Built on Spring Security's own support (`spring-boot-starter-oauth2-resource-server`), so **no
@@ -807,6 +812,46 @@ sellers while the abuse it prevents is already bounded by rate limiting and the 
 above. The upgrade path is to set `PENDING_REVIEW` on create and add an admin endpoint that flips it
 to `ACTIVE`/`HIDDEN` — the status machine already supports it.
 
+### 6.27 Email verification (M4d)
+
+Registration trusts whatever address the client types. Email verification proves the person controls
+that mailbox by asking them to open a link only it can receive. `users.verified` has existed since
+V2 but was never written; this feature finally drives it.
+
+```text
+POST /auth/register
+  → AuthService.save(user)                      verified = false
+  → invalidateAllForUser(userId)                retire any older link
+  → EmailVerificationToken.issue(sha256(raw))   store the HASH, single-use, 24h TTL (V12)
+  → EmailSender.send(email, link?token=raw)     default sender LOGS it (dev); prod swaps in SMTP
+
+POST /auth/verify-email { token }
+  → consumeIfActive(sha256(token))              one conditional UPDATE: unused AND not expired
+  → user.markVerified(); save(user)             → 204
+```
+
+| Piece | Responsibility |
+|---|---|
+| `user/EmailVerificationToken` | the row; only the SHA-256 hash is stored, exactly like `RefreshToken` |
+| `EmailVerificationTokenRepository` | `consumeIfActive` (single-use) and `invalidateAllForUser` (resend supersedes) |
+| `common/email/EmailSender` | one-method seam between "send this" and "how it is delivered" |
+| `common/email/LoggingEmailSender` | the default bean: writes the message to the log instead of delivering it |
+| `user/dto/VerifyEmailRequest` | the `{ "token": ... }` body; masks the token in `toString()` |
+
+**Why a pluggable sender instead of a real SMTP client?** The security-critical work — unguessable
+token, hash-at-rest, expiry, single-use, generic errors — is all server-side and needs no third
+party. Only *delivery* does, and that is a deployment concern, so it sits behind `EmailSender`. The
+default implementation logs the link (and only when `pawzaar.email.log-body=true`, on in `dev` and
+off everywhere else) so the flow is fully exercisable locally and in tests with no account to
+configure. A production deployment adds its own `EmailSender` bean; `EmailConfig` backs off via
+`@ConditionalOnMissingBean`, so nothing else changes.
+
+**Nothing is gated on the flag (yet).** An unverified account can still browse, list and sell exactly
+as before; `verified` is informational in `UserResponse`. Gating (e.g. "verified sellers only") is a
+product decision left open, and the flag is now populated so it can be switched on later without a
+migration. Bad, expired and already-used tokens all return the same `400` `problem+json`, so token
+state cannot be probed.
+
 ---
 
 ## 7. Journey of one request (end to end)
@@ -893,7 +938,8 @@ ProblemDetail  →  application/problem+json
 | `permitAll(GET, "/api/v1/pets", "/api/v1/pets/**")` | anyone can **browse** |
 | `permitAll(POST, "/api/v1/auth/register", "/api/v1/auth/login")` | you must be able to register/log in without a token |
 | `permitAll(POST, "/api/v1/auth/refresh", "/api/v1/auth/logout")` | refresh/logout are authenticated by the refresh token in the body, not by an access token |
-| `anyRequest().authenticated()` | everything else needs credentials |
+| `permitAll(POST, "/api/v1/auth/verify-email")` | the emailed verification token is the credential; the user may not be logged in yet |
+| `anyRequest().authenticated()` | everything else needs credentials (incl. `/auth/verify-email/resend`) |
 
 The browser-facing CORS rules live in `CorsConfig` (a `CorsConfigurationSource` bean) and are
 switched on by `http.cors(Customizer.withDefaults())`. `allowed-origins` is an explicit allowlist
@@ -987,6 +1033,7 @@ pets:   id, seller_id → users(id), title, species, breed?, age_months, price,
         description?, city, province, status, created_at
 pet_images: id, pet_id → pets(id), storage_key(UNIQUE), content_type, size_bytes, sort_order, created_at
 refresh_tokens: id, user_id → users(id), token_hash(UNIQUE), expires_at, revoked, created_at
+email_verification_tokens: id, user_id → users(id), token_hash(UNIQUE), expires_at, used, created_at
 ```
 
 Indexes on `pets`: `(status, created_at DESC)`, `(species, breed)`, `(province, city)`,
@@ -1008,6 +1055,11 @@ the batch cover lookup (`pet_id`, `0`) used by the list endpoint.
 | `V5__fix_seed_user_password.sql` | gave the V3 seed seller a real BCrypt hash (V3 had stored a placeholder, so it could never log in) |
 | `V6__add_pet_search_indexes.sql` | added the search indexes the query patterns needed but `V2` lacked: `(age_months)`, `(city)`, and `gin(lower(breed) trgm)` |
 | `V7__create_pet_images.sql` | created `pet_images` (FK to `pets`, `ON DELETE CASCADE`) + an index on `(pet_id, sort_order)` |
+| `V8__add_user_bio.sql` | added `bio` to `users` (profile "about me") |
+| `V9__add_user_avatar.sql` | added `avatar_storage_key` / `avatar_content_type` to `users` (one avatar per user) |
+| `V10__remove_seed_data.sql` | removed the `V3`/`V5` demo seller + pets from **every** environment (C1); dev sample data moved to `db/migration-dev` |
+| `V11__unique_pet_image_sort_order.sql` | added `UNIQUE(pet_id, sort_order)` and dropped the now-redundant `idx_pet_images_pet` (H4) |
+| `V12__create_email_verification_tokens.sql` | created `email_verification_tokens` (single-use, hashed, expiring) for M4d |
 
 **Rules:**
 
@@ -1059,7 +1111,7 @@ Controller  →  returns PetResponse (DTO)     ← entities never reach here
 | `PetImageServiceTest` (plain Mockito) | nothing | ❌ | owner-only upload/delete, file cleanup when the row write fails, hiding a non-`ACTIVE` listing's images |
 | `PawzaarApiApplicationTests` (`@SpringBootTest`) | everything | ✅ | the whole context starts |
 
-Current total: **118 tests**, all green with `mvn test`.
+Current total: **221 tests**, all green with `mvn test`.
 
 ```bash
 .\mvnw.cmd test                                            # all tests

@@ -29,6 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 "DATABASE_PASSWORD=pawzaar_dev",
                 "JWT_SECRET=dGVzdC1vbmx5LXNlY3JldC1rZXktZG8tbm90LXVzZS1pbi1wcm9kdWN0aW9uLTAwMQ==",
                 "CORS_ALLOWED_ORIGINS=http://localhost:5173",
+                "PAWZAAR_EMAIL_VERIFICATION_BASE_URL=https://app.pawzaar.test/verify-email",
                 "pawzaar.storage.type=local",
                 "pawzaar.storage.root=target/prod-test-uploads"
         })

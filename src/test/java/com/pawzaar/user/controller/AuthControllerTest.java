@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -146,5 +147,43 @@ class AuthControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.title").value("Data conflict"));
+    }
+
+    // ── M4d: email verification ────────────────────────────────────────────────
+
+    @Test
+    void verifyEmailIsPublicAndReturns204() throws Exception {
+        // No Authorization header: this works ONLY because /auth/verify-email is whitelisted.
+        mockMvc.perform(post("/api/v1/auth/verify-email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"opaque-token-value\"}"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void verifyEmailWithBlankTokenYields400BeforeTheServiceRuns() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/verify-email")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation failed"));
+    }
+
+    @Test
+    void resendVerificationRequiresAuthentication() throws Exception {
+        // /auth/verify-email/resend is deliberately NOT whitelisted: only the account owner may
+        // trigger a send.
+        mockMvc.perform(post("/api/v1/auth/verify-email/resend"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void resendVerificationReturns204ForTheAuthenticatedUser() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/verify-email/resend")
+                        .with(jwt().jwt(j -> j.subject("11111111-1111-1111-1111-111111111111"))))
+                .andExpect(status().isNoContent());
+
+        org.mockito.Mockito.verify(authService)
+                .resendVerification(java.util.UUID.fromString("11111111-1111-1111-1111-111111111111"));
     }
 }

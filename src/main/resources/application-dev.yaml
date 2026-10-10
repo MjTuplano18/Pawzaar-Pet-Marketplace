@@ -34,3 +34,7 @@ pawzaar:
     cors:
       # The common local front-end dev servers (Vite default = 5173, CRA = 3000).
       allowed-origins: http://localhost:5173,http://localhost:3000
+  email:
+    # M4d: print the verification link in the console so you can click it locally. Never enable
+    # this outside dev - the body contains a live token.
+    log-body: true

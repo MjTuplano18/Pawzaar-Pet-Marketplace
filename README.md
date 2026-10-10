@@ -25,6 +25,9 @@ stateless JWT auth with refresh-token rotation, role-based authorization, automa
   the service layer. Posting your first listing promotes your account to `SELLER`.
 - **Authentication** — registration + login issuing a short-lived **access JWT** and a long-lived,
   **rotating refresh token**; generic 401s that never reveal whether an email exists.
+- **Email verification** — registration sends a single-use, expiring link; `POST /auth/verify-email`
+  marks the account verified. The default sender **logs** the link in dev (no SMTP account needed);
+  swap in a real `EmailSender` bean for production. Nothing is gated on the flag yet.
 - **Authorization** — URL rules plus method-level `@PreAuthorize`: any authenticated user may post a
   listing, but only `SELLER`s may edit or delete, on top of a service-layer ownership check.
 - **One error format** — every error is an RFC 9457 `application/problem+json` response.
@@ -39,7 +42,7 @@ stateless JWT auth with refresh-token rotation, role-based authorization, automa
 - **Observability & docs** — Actuator health probes (liveness/readiness), Swagger UI (dev/test only),
   and structured logging: every response carries an `X-Request-Id` header that is also stamped into the
   server logs, 5xx errors / storage failures / auth failures are logged (never passwords or tokens).
-- **Quality gates** — 118 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds and
+- **Quality gates** — 221 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds and
   tests every push; `.\verify-local.ps1` runs the same checks (plus a live smoke test) locally.
 
 ---
@@ -133,6 +136,8 @@ All routes are versioned under `/api/v1`.
 | `POST` | `/auth/login` | public | issue an access + refresh token pair |
 | `POST` | `/auth/refresh` | public\* | exchange a refresh token for a new pair (rotation) |
 | `POST` | `/auth/logout` | public\* | revoke a refresh token (204) |
+| `POST` | `/auth/verify-email` | public | consume the emailed token, mark the account verified (204) |
+| `POST` | `/auth/verify-email/resend` | bearer | send a fresh verification link (204) |
 | `GET` | `/pets` | public | paginated, filterable, sortable `ACTIVE` listings |
 | `GET` | `/pets/{id}` | public | one `ACTIVE` listing (404 otherwise) |
 | `POST` | `/pets` | USER/SELLER | create a listing (201 + `Location`) |
@@ -157,6 +162,15 @@ returns **429** `problem+json` with a `Retry-After` header.
 > **overwrite** the header before forwarding; if your host passes the header through untouched,
 > keep the env knob `RATE_LIMIT_TRUST_FORWARDED_FOR=false` (the default) and understand you are
 > globally rate-limited instead.
+
+> **Email verification (M4d).** Registering issues a single-use verification token (stored only as a
+> SHA-256 hash, 24h TTL) and hands the link to an `EmailSender`. The default implementation is
+> `LoggingEmailSender`: it writes the message to the log instead of delivering it, so local dev and
+> tests need no mail account. Run with the `dev` profile (`pawzaar.email.log-body=true`) and copy the
+> `...?token=...` link from the console; in production, supply your own `EmailSender` bean and
+> `EmailConfig` backs off automatically. Bad, expired and already-used tokens all return **400**
+> `problem+json`; `/auth/verify-email` is rate limited and `/auth/verify-email/resend` requires a
+> bearer token.
 
 List endpoints are paginated (`?page=0&size=20`) and the page size is hard-capped at **50**.
 
@@ -219,7 +233,7 @@ service; controllers return DTO records only.
 
 | Done | Next |
 |---|---|
-| Public browsing, seller CRUD, JWT + refresh tokens, role-based `@PreAuthorize`, search & filtering, auth rate limiting, listing images, CORS, tests, CI, Docker | Admin moderation & reporting |
+| Public browsing, seller CRUD, JWT + refresh tokens, email verification, role-based `@PreAuthorize`, search & filtering, auth rate limiting, listing images, CORS, tests, CI, Docker | Admin moderation & reporting |
 
 The full plan lives in
 [`Pawzaar — Spring Boot Learning & Build Roadmap.md`](<Pawzaar — Spring Boot Learning & Build Roadmap.md>).

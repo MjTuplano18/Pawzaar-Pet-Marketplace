@@ -5,10 +5,13 @@ import com.pawzaar.user.dto.RefreshRequest;
 import com.pawzaar.user.dto.RegisterRequest;
 import com.pawzaar.user.dto.TokenResponse;
 import com.pawzaar.user.dto.UserResponse;
+import com.pawzaar.user.dto.VerifyEmailRequest;
 import com.pawzaar.user.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,6 +19,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.util.UUID;
 
 /**
  * Exposes the auth feature over HTTP.
@@ -26,6 +30,8 @@ import java.net.URI;
  *   <li>POST /api/v1/auth/login    -> 200 + an access JWT AND a refresh token</li>
  *   <li>POST /api/v1/auth/refresh  -> 200 + a brand-new token pair (rotates the refresh token)</li>
  *   <li>POST /api/v1/auth/logout   -> 204, revokes the refresh token</li>
+ *   <li>POST /api/v1/auth/verify-email        -> 204, consumes the emailed token (M4d)</li>
+ *   <li>POST /api/v1/auth/verify-email/resend -> 204, sends a fresh link (authenticated, M4d)</li>
  * </ul>
  *
  * <p>THE THIN CONTROLLER RULE: parse the request, delegate to the service, return the DTO.
@@ -76,6 +82,24 @@ public class AuthController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void logout(@Valid @RequestBody RefreshRequest request) {
         authService.logout(request.refreshToken());
+    }
+
+    // M4d: consumes the token from the verification link and marks the account verified.
+    // Public (whitelisted in SecurityConfig) because the token IS the credential - the user may not
+    // have logged in yet. A bad/expired/spent token is a 400, with a deliberately generic message.
+    @PostMapping("/verify-email")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
+        authService.verifyEmail(request.token());
+    }
+
+    // M4d: re-sends a verification link. Requires an access token (this route is NOT whitelisted),
+    // so only the account owner can trigger a send, and it is covered by the auth rate limiter.
+    // Verified users get a quiet 204: there is nothing left to prove.
+    @PostMapping("/verify-email/resend")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resendVerification(@AuthenticationPrincipal Jwt jwt) {
+        authService.resendVerification(UUID.fromString(jwt.getSubject()));
     }
 
 }

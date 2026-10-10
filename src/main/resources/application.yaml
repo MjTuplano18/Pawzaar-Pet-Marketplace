@@ -71,6 +71,20 @@ pawzaar:
     # Only enable behind a proxy you control: X-Forwarded-For is client-supplied and spoofable.
     trust-forwarded-for: ${RATE_LIMIT_TRUST_FORWARDED_FOR:false}
 
+  # M4d: email verification. The default sender logs the message instead of delivering it (see
+  # com.pawzaar.common.email), so local dev and tests need no SMTP account; a deployment supplies
+  # its own EmailSender bean to actually deliver mail.
+  email:
+    from: ${PAWZAAR_EMAIL_FROM:no-reply@pawzaar.local}
+    # How long an emailed verification link stays valid.
+    verification-validity: ${PAWZAAR_EMAIL_VERIFICATION_VALIDITY:24h}
+    # The SPA route the link points at; the raw token is appended as ?token=<value>.
+    verification-base-url: ${PAWZAAR_EMAIL_VERIFICATION_BASE_URL:http://localhost:5173/verify-email}
+    verification-subject: ${PAWZAAR_EMAIL_VERIFICATION_SUBJECT:Verify your Pawzaar email address}
+    # Print the message body (which carries the link/token) in the log. DEV ONLY - keep it false
+    # everywhere else so verification tokens never end up in logs.
+    log-body: ${PAWZAAR_EMAIL_LOG_BODY:false}
+
 # ── Actuator: health probes for the hosting platform / load balancer ──────────
 management:
   endpoints:

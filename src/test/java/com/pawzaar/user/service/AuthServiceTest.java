@@ -1,26 +1,33 @@
 package com.pawzaar.user.service;
 
+import com.pawzaar.common.email.EmailProperties;
+import com.pawzaar.common.email.EmailSender;
 import com.pawzaar.common.image.ImageStorage;
 import com.pawzaar.common.image.ImageValidator;
 import com.pawzaar.common.image.ServedImage;
 import com.pawzaar.common.image.ValidatedImage;
 import com.pawzaar.config.PasswordEncoderConfig;
 import com.pawzaar.user.AvatarNotFoundException;
+import com.pawzaar.user.EmailVerificationToken;
 import com.pawzaar.user.InvalidCredentialsException;
 import com.pawzaar.user.InvalidRefreshTokenException;
+import com.pawzaar.user.InvalidVerificationTokenException;
 import com.pawzaar.user.RefreshToken;
 import com.pawzaar.user.Role;
 import com.pawzaar.user.User;
 import com.pawzaar.user.UserNotFoundException;
 import com.pawzaar.user.dto.LoginRequest;
+import com.pawzaar.user.dto.RegisterRequest;
 import com.pawzaar.user.dto.TokenResponse;
 import com.pawzaar.user.dto.UpdateProfileRequest;
 import com.pawzaar.user.dto.UserResponse;
+import com.pawzaar.user.repository.EmailVerificationTokenRepository;
 import com.pawzaar.user.repository.RefreshTokenRepository;
 import com.pawzaar.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -31,14 +38,19 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mock.web.MockMultipartFile;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -76,6 +88,15 @@ class AuthServiceTest {
     @Mock
     private ImageStorage profileImageStorage;
 
+    // M4d
+    @Mock
+    private EmailVerificationTokenRepository emailVerificationTokenRepository;
+    @Mock
+    private EmailSender emailSender;
+
+    // Real properties object (plain class, no Spring needed) so the token lifetime/links are real.
+    private final EmailProperties emailProperties = new EmailProperties();
+
     // The REAL production encoder bean (with the {bcrypt} prefix and the legacy fallback),
     // so these tests exercise the exact hashing configuration the app runs with.
     private final PasswordEncoder realEncoder = new PasswordEncoderConfig().passwordEncoder();
@@ -91,7 +112,10 @@ class AuthServiceTest {
                 refreshTokenRepository,
                 Duration.ofDays(7),
                 imageValidator,
-                profileImageStorage);
+                profileImageStorage,
+                emailVerificationTokenRepository,
+                emailSender,
+                emailProperties);
     }
 
     private static User userWithHash(String hash) {
@@ -423,6 +447,120 @@ class AuthServiceTest {
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
 
         assertThrows(AvatarNotFoundException.class, () -> authService.getAvatar(user.getId()));
+    }
+
+    // ── email verification (M4d) ──────────────────────────────────────────────
+
+    @Test
+    void registerIssuesAVerificationEmailStoringOnlyTheTokenHash() {
+        when(userRepository.existsByEmail(anyString())).thenReturn(false);
+        // The real repository assigns the generated id on insert; the mock must do the same, or the
+        // verification token would be issued for a null user id.
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> {
+            User user = inv.getArgument(0);
+            setField(user, "id", UUID.randomUUID());
+            return user;
+        });
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+
+        authService.register(new RegisterRequest(EMAIL, "pawzaar123", "Ana Reyes", null));
+
+        // A verification link was emailed...
+        verify(emailSender).send(eq(EMAIL), anyString(), body.capture());
+        String rawToken = tokenFromLink(body.getValue());
+
+        // ...any earlier outstanding tokens were retired...
+        verify(emailVerificationTokenRepository).invalidateAllForUser(any(UUID.class));
+
+        // ...and what was persisted is the SHA-256 of the emailed token, never the token itself.
+        ArgumentCaptor<EmailVerificationToken> stored =
+                ArgumentCaptor.forClass(EmailVerificationToken.class);
+        verify(emailVerificationTokenRepository).save(stored.capture());
+        assertEquals(sha256Hex(rawToken), stored.getValue().getTokenHash());
+        assertNotEquals(rawToken, stored.getValue().getTokenHash());
+    }
+
+    @Test
+    void verifyEmailMarksTheUserVerified() {
+        User user = userWithHash(realEncoder.encode("pawzaar123"));
+        EmailVerificationToken token = EmailVerificationToken.issue(
+                user.getId(), "irrelevant-hash", Instant.now().plusSeconds(3600));
+        when(emailVerificationTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(token));
+        when(emailVerificationTokenRepository.consumeIfActive(anyString(), any(Instant.class))).thenReturn(1);
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        authService.verifyEmail("some-raw-token");
+
+        assertTrue(user.isVerified());
+        // The token is single-use: it is claimed by the atomic conditional UPDATE.
+        verify(emailVerificationTokenRepository).consumeIfActive(anyString(), any(Instant.class));
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void verifyEmailRejectsAnUnknownToken() {
+        when(emailVerificationTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.empty());
+
+        assertThrows(InvalidVerificationTokenException.class, () -> authService.verifyEmail("nope"));
+    }
+
+    @Test
+    void verifyEmailRejectsATokenThatIsExpiredOrAlreadyUsed() {
+        User user = userWithHash(realEncoder.encode("pawzaar123"));
+        EmailVerificationToken token = EmailVerificationToken.issue(
+                user.getId(), "hash", Instant.now().plusSeconds(3600));
+        when(emailVerificationTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(token));
+        // 0 rows changed = it was already spent or has expired.
+        when(emailVerificationTokenRepository.consumeIfActive(anyString(), any(Instant.class))).thenReturn(0);
+
+        assertThrows(InvalidVerificationTokenException.class, () -> authService.verifyEmail("stale"));
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void resendVerificationEmailsANewLinkWhenNotYetVerified() {
+        User user = userWithHash(realEncoder.encode("pawzaar123"));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        authService.resendVerification(user.getId());
+
+        verify(emailSender).send(eq(EMAIL), anyString(), anyString());
+        verify(emailVerificationTokenRepository).save(any(EmailVerificationToken.class));
+    }
+
+    @Test
+    void resendVerificationIsSilentWhenAlreadyVerified() {
+        User user = userWithHash(realEncoder.encode("pawzaar123"));
+        user.markVerified();
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        authService.resendVerification(user.getId());
+
+        verify(emailSender, never()).send(anyString(), anyString(), anyString());
+        verify(emailVerificationTokenRepository, never()).save(any(EmailVerificationToken.class));
+    }
+
+    /** Pulls the raw token out of a body of the form "...?token=<value>\n\n...". */
+    private static String tokenFromLink(String body) {
+        String marker = "?token=";
+        int start = body.indexOf(marker) + marker.length();
+        int end = start;
+        while (end < body.length() && !Character.isWhitespace(body.charAt(end))) {
+            end++;
+        }
+        return body.substring(start, end);
+    }
+
+    /** Independent SHA-256 so the test does not reuse the service's own helper. */
+    private static String sha256Hex(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** A tiny stand-in upload; the validator is mocked, so its bytes are never examined. */

@@ -91,8 +91,9 @@ public class User {
     @Column(nullable = false, length = 20)
     private Role role = Role.USER;   // matches the DB default 'USER'
 
-    // Primitive boolean (never Boolean) so it can never be null; @Valid flips it to true later.
-    @Setter
+    // Primitive boolean (never Boolean) so it can never be null.
+    // M4d: flipped by markVerified() once the user proves control of the address via the emailed
+    // link. Nothing in the app is GATED on this flag yet - it is informational.
     @Column(nullable = false)
     private boolean verified = false;
 
@@ -119,6 +120,15 @@ public class User {
         user.passwordHash = passwordHash;  // <- the hash, never the raw password
         user.displayName = displayName;
         return user;                       // role and verified already default to USER / false
+    }
+
+    /**
+     * M4d: marks the account email-verified, after the user opened the link sent to that address.
+     * A domain method (not a setter) so the only way to flip the flag is to pass through this
+     * intention-revealing call.
+     */
+    public void markVerified() {
+        this.verified = true;
     }
 
     // Lifecycle callback: Spring/Hibernate calls this automatically just before every INSERT,

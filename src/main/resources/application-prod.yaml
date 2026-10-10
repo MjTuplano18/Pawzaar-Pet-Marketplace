@@ -50,6 +50,11 @@ pawzaar:
       profile-bucket: ${SUPABASE_PROFILE_BUCKET}
       document-bucket: ${SUPABASE_DOCUMENT_BUCKET}
       service-key: ${SUPABASE_SERVICE_KEY}
+  email:
+    # M4d: the public front-end route the verification link must point at.
+    verification-base-url: ${PAWZAAR_EMAIL_VERIFICATION_BASE_URL}
+    # Never print message bodies in production - they carry live verification tokens.
+    log-body: false
 
 # H7: the OpenAPI document describes every route, parameter and schema - a map for an attacker.
 # Disable (do not merely secure) both in production so /v3/api-docs and /swagger-ui return 404

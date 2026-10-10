@@ -17,6 +17,7 @@ import com.pawzaar.user.AvatarNotFoundException;             // "no avatar set" 
 import com.pawzaar.user.EmailAlreadyRegisteredException;   // "email already taken"     -> 409
 import com.pawzaar.user.InvalidCredentialsException;       // "login failed"            -> 401
 import com.pawzaar.user.InvalidRefreshTokenException;      // "refresh token bad"       -> 401
+import com.pawzaar.user.InvalidVerificationTokenException; // "verify token bad"        -> 400
 import com.pawzaar.user.UserNotFoundException;             // "user no longer exists"   -> 404
 
 // === Spring's HTTP layer ===
@@ -204,6 +205,20 @@ public class GlobalExceptionHandler {
                 HttpStatus.UNAUTHORIZED,       // 401
                 ex.getMessage());              // "Refresh token is invalid or expired"
         problem.setTitle("Invalid refresh token");
+        return problem;
+    }
+
+    // 400 Bad Request: POST /auth/verify-email was given a token that is unknown, expired, or
+    // already used. Same generic message for all three, so token state cannot be probed.
+    // A bad verification token is invalid INPUT (not a failed login), hence 400 rather than 401.
+    @ExceptionHandler(InvalidVerificationTokenException.class)
+    public ProblemDetail handleInvalidVerificationToken(InvalidVerificationTokenException ex) {
+        // M10: record the failure, but never log the token itself - it is a credential.
+        log.warn("Email verification failed: token rejected");
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,        // 400
+                ex.getMessage());              // "Verification token is invalid or expired"
+        problem.setTitle("Invalid verification token");
         return problem;
     }
 

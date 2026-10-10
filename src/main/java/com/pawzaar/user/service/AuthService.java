@@ -1,6 +1,8 @@
 package com.pawzaar.user.service;
 
 // === avatar storage ===
+import com.pawzaar.common.email.EmailProperties;
+import com.pawzaar.common.email.EmailSender;
 import com.pawzaar.common.image.ImageStorage;
 import com.pawzaar.common.image.ImageStorageException;
 import com.pawzaar.common.image.ImageValidator;
@@ -10,8 +12,10 @@ import com.pawzaar.common.image.ValidatedImage;
 
 import com.pawzaar.user.AvatarNotFoundException;
 import com.pawzaar.user.EmailAlreadyRegisteredException;
+import com.pawzaar.user.EmailVerificationToken;
 import com.pawzaar.user.InvalidCredentialsException;
 import com.pawzaar.user.InvalidRefreshTokenException;
+import com.pawzaar.user.InvalidVerificationTokenException;
 import com.pawzaar.user.RefreshToken;
 import com.pawzaar.user.User;
 import com.pawzaar.user.UserNotFoundException;
@@ -20,6 +24,7 @@ import com.pawzaar.user.dto.RegisterRequest;
 import com.pawzaar.user.dto.TokenResponse;
 import com.pawzaar.user.dto.UpdateProfileRequest;
 import com.pawzaar.user.dto.UserResponse;
+import com.pawzaar.user.repository.EmailVerificationTokenRepository;
 import com.pawzaar.user.repository.RefreshTokenRepository;
 import com.pawzaar.user.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -51,6 +56,7 @@ import java.util.UUID;
  * <ul>
  *   <li>run database work inside a transaction;</li>
  *   <li>hold the business rules (email is unique, passwords are hashed, tokens are issued);</li>
+ *   <li>issue and consume single-use email-verification tokens (M4d);</li>
  *   <li>translate entities into DTOs so {@code User} never leaves this layer.</li>
  * </ul>
  */
@@ -90,6 +96,15 @@ public class AuthService {
     // Same allowlist + magic-byte sniffing rules that protect pet images.
     private final ImageValidator imageValidator;
 
+    // M4d: stores the SHA-256 hashes of email-verification tokens (single-use; see V12).
+    private final EmailVerificationTokenRepository emailVerificationTokenRepository;
+
+    // M4d: delivers the verification link. The dev bean logs it; a real deployment swaps in SMTP.
+    private final EmailSender emailSender;
+
+    // M4d: from-address, link base URL and token lifetime for the verification email.
+    private final EmailProperties emailProperties;
+
     // One SecureRandom for the whole service: it is thread-safe and seeding it is expensive.
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -102,7 +117,10 @@ public class AuthService {
                        RefreshTokenRepository refreshTokenRepository,
                        Duration refreshTokenValidity,
                        ImageValidator imageValidator,
-                       @Qualifier("profileImageStorage") ImageStorage profileImageStorage) {
+                       @Qualifier("profileImageStorage") ImageStorage profileImageStorage,
+                       EmailVerificationTokenRepository emailVerificationTokenRepository,
+                       EmailSender emailSender,
+                       EmailProperties emailProperties) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtEncoder = jwtEncoder;
@@ -111,6 +129,9 @@ public class AuthService {
         this.refreshTokenValidity = refreshTokenValidity;
         this.imageValidator = imageValidator;
         this.profileImageStorage = profileImageStorage;
+        this.emailVerificationTokenRepository = emailVerificationTokenRepository;
+        this.emailSender = emailSender;
+        this.emailProperties = emailProperties;
         // One hash computed at startup (~100ms, once) - see the field comment.
         this.dummyHash = passwordEncoder.encode("pawzaar-dummy-password-for-timing-only");
     }
@@ -149,7 +170,83 @@ public class AuthService {
         // it would be an UPDATE for an entity that already has one.
         User saved = userRepository.save(user);
 
+        // M4d: prove the address is real. Issuing the token is part of this same transaction, so a
+        // failure here rolls the whole registration back rather than leaving an account with no way
+        // to verify. (Delivery itself happens through the pluggable EmailSender.)
+        sendVerificationEmail(saved);
+
         return toResponse(saved);   // entity -> DTO, exactly like PetService does
+    }
+
+    // ── email verification (M4d) ──────────────────────────────────────────────
+
+    /**
+     * Consumes an emailed verification token and marks the account verified.
+     *
+     * <p>Single-use and atomic: {@link EmailVerificationTokenRepository#consumeIfActive} flips
+     * {@code used} in one conditional UPDATE (checking expiry in the same statement), so two
+     * requests racing on the same link cannot both succeed. Unknown, expired and already-spent
+     * tokens all produce the same generic error, so token state cannot be probed.
+     *
+     * @throws InvalidVerificationTokenException if the token is unknown, expired, or already used
+     */
+    @Transactional
+    public void verifyEmail(String rawToken) {
+        String tokenHash = sha256Hex(rawToken);
+        EmailVerificationToken token = emailVerificationTokenRepository.findByTokenHash(tokenHash)
+                .orElseThrow(InvalidVerificationTokenException::new);
+
+        // Claim it atomically; 0 means it was already spent or has expired.
+        if (emailVerificationTokenRepository.consumeIfActive(tokenHash, Instant.now()) == 0) {
+            throw new InvalidVerificationTokenException();
+        }
+
+        User user = userRepository.findById(token.getUserId())
+                // The FK guarantees the user existed when the token was issued; a missing row means
+                // the account was deleted since, which is indistinguishable from a bad token.
+                .orElseThrow(InvalidVerificationTokenException::new);
+        user.markVerified();
+        userRepository.save(user);
+    }
+
+    /**
+     * Re-sends a verification link to the caller. Idempotent when already verified: there is nothing
+     * to prove, so no email is sent.
+     *
+     * <p>Issuing a fresh token retires any earlier outstanding one (see
+     * {@link #sendVerificationEmail}), so only the newest link works.
+     */
+    @Transactional
+    public void resendVerification(UUID userId) {
+        User user = findUser(userId);
+        if (user.isVerified()) {
+            return;   // already verified - nothing to send
+        }
+        sendVerificationEmail(user);
+    }
+
+    /**
+     * Issues a fresh verification token for the user and hands the link to the {@link EmailSender}.
+     *
+     * <p>Only the SHA-256 hash is persisted; the raw token exists just long enough to build the
+     * link. Any previously issued token is retired first, so a resent link supersedes an older one.
+     */
+    private void sendVerificationEmail(User user) {
+        emailVerificationTokenRepository.invalidateAllForUser(user.getId());
+
+        String rawToken = generateRawToken();
+        emailVerificationTokenRepository.save(EmailVerificationToken.issue(
+                user.getId(),
+                sha256Hex(rawToken),
+                Instant.now().plus(emailProperties.getVerificationValidity())));
+
+        String link = emailProperties.getVerificationBaseUrl() + "?token=" + rawToken;
+        String body = "Welcome to Pawzaar!\n\n"
+                + "Confirm your email address by opening this link:\n" + link + "\n\n"
+                + "It expires in " + emailProperties.getVerificationValidity().toHours() + " hours. "
+                + "If you did not create a Pawzaar account, you can ignore this message.";
+
+        emailSender.send(user.getEmail(), emailProperties.getVerificationSubject(), body);
     }
 
     /**

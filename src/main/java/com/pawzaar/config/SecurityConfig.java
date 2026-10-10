@@ -88,7 +88,10 @@ public class SecurityConfig {
                         "/api/v1/auth/register",
                         "/api/v1/auth/login",
                         "/api/v1/auth/refresh",
-                        "/api/v1/auth/logout").permitAll()
+                        "/api/v1/auth/logout",
+                        // M4d: the emailed token IS the credential, and the user may not be logged
+                        // in yet. NOT the /resend sibling - that one stays authenticated.
+                        "/api/v1/auth/verify-email").permitAll()
                 // Everything else (any method, any other URL): must be authenticated.
                 .anyRequest().authenticated())
 

@@ -45,7 +45,10 @@ public class RateLimitProperties {
             "/api/v1/auth/register",
             "/api/v1/auth/login",
             "/api/v1/auth/refresh",
-            "/api/v1/auth/logout");
+            "/api/v1/auth/logout",
+            // M4d: a spent/idle bucket here also throttles verification-link guessing and re-sends.
+            "/api/v1/auth/verify-email",
+            "/api/v1/auth/verify-email/resend");
 
     public boolean isEnabled() {
         return enabled;
