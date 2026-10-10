@@ -4,6 +4,8 @@ import com.pawzaar.user.dto.LoginRequest;
 import com.pawzaar.user.dto.RefreshRequest;
 import com.pawzaar.user.dto.RegisterRequest;
 import com.pawzaar.user.dto.TokenResponse;
+import com.pawzaar.user.dto.ForgotPasswordRequest;
+import com.pawzaar.user.dto.ResetPasswordRequest;
 import com.pawzaar.user.dto.UserResponse;
 import com.pawzaar.user.dto.VerifyEmailRequest;
 import com.pawzaar.user.service.AuthService;
@@ -32,6 +34,8 @@ import java.util.UUID;
  *   <li>POST /api/v1/auth/logout   -> 204, revokes the refresh token</li>
  *   <li>POST /api/v1/auth/verify-email        -> 204, consumes the emailed token (M4d)</li>
  *   <li>POST /api/v1/auth/verify-email/resend -> 204, sends a fresh link (authenticated, M4d)</li>
+ *   <li>POST /api/v1/auth/forgot-password     -> 204, emails a reset link (public, always)</li>
+ *   <li>POST /api/v1/auth/reset-password      -> 204, sets a new password from the emailed token</li>
  * </ul>
  *
  * <p>THE THIN CONTROLLER RULE: parse the request, delegate to the service, return the DTO.
@@ -100,6 +104,22 @@ public class AuthController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void resendVerification(@AuthenticationPrincipal Jwt jwt) {
         authService.resendVerification(UUID.fromString(jwt.getSubject()));
+    }
+
+    // Password reset, step 1: email a reset link. Public and rate limited. ALWAYS 204 - the response
+    // must not reveal whether the address is registered (that would be account enumeration).
+    @PostMapping("/forgot-password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        authService.requestPasswordReset(request.email());
+    }
+
+    // Password reset, step 2: set the new password. Public because the emailed token IS the
+    // credential. A bad/expired/spent token is a 400, with a deliberately generic message.
+    @PostMapping("/reset-password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request.token(), request.newPassword());
     }
 
 }

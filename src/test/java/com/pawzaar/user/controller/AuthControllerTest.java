@@ -4,6 +4,7 @@ import com.pawzaar.config.JwtConfig;
 import com.pawzaar.config.SecurityConfig;
 import com.pawzaar.user.InvalidCredentialsException;
 import com.pawzaar.user.InvalidRefreshTokenException;
+import com.pawzaar.user.InvalidResetTokenException;
 import com.pawzaar.user.dto.TokenResponse;
 import com.pawzaar.user.service.AuthService;
 import org.junit.jupiter.api.Test;
@@ -185,5 +186,82 @@ class AuthControllerTest {
 
         org.mockito.Mockito.verify(authService)
                 .resendVerification(java.util.UUID.fromString("11111111-1111-1111-1111-111111111111"));
+    }
+
+    // ── password reset ─────────────────────────────────────────────────────────
+
+    @Test
+    void forgotPasswordIsPublicAndReturns204() throws Exception {
+        // No Authorization header: this works ONLY because /auth/forgot-password is whitelisted.
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"ana@email.com\"}"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void forgotPasswordWithAValidRequestReturns204EvenForAnUnknownEmail() throws Exception {
+        // The response must be identical whether or not the address exists (no enumeration). The
+        // service returns void; the controller simply answers 204.
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"ghost@email.com\"}"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void forgotPasswordWithAnInvalidEmailYields400BeforeTheServiceRuns() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"not-an-email\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation failed"));
+
+        org.mockito.Mockito.verifyNoInteractions(authService);
+    }
+
+    @Test
+    void resetPasswordIsPublicAndReturns204() throws Exception {
+        // No Authorization header: the emailed token IS the credential, so the route is whitelisted.
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"opaque-token-value\",\"newPassword\":\"pawzaar123\"}"))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void resetPasswordWithABadTokenYields400ProblemDetail() throws Exception {
+        org.mockito.Mockito.doThrow(new InvalidResetTokenException())
+                .when(authService).resetPassword(any(), any());
+
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"stale\",\"newPassword\":\"pawzaar123\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Invalid reset token"))
+                .andExpect(jsonPath("$.detail").value("Password reset token is invalid or expired"));
+    }
+
+    @Test
+    void resetPasswordWithBlankFieldsYields400BeforeTheServiceRuns() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"\",\"newPassword\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation failed"));
+
+        org.mockito.Mockito.verifyNoInteractions(authService);
+    }
+
+    @Test
+    void resetPasswordWithTooShortPasswordYields400BeforeTheServiceRuns() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"opaque\",\"newPassword\":\"short\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.title").value("Validation failed"));
+
+        org.mockito.Mockito.verifyNoInteractions(authService);
     }
 }

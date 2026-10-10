@@ -15,7 +15,9 @@ import com.pawzaar.user.EmailAlreadyRegisteredException;
 import com.pawzaar.user.EmailVerificationToken;
 import com.pawzaar.user.InvalidCredentialsException;
 import com.pawzaar.user.InvalidRefreshTokenException;
+import com.pawzaar.user.InvalidResetTokenException;
 import com.pawzaar.user.InvalidVerificationTokenException;
+import com.pawzaar.user.PasswordResetToken;
 import com.pawzaar.user.RefreshToken;
 import com.pawzaar.user.User;
 import com.pawzaar.user.UserNotFoundException;
@@ -25,6 +27,7 @@ import com.pawzaar.user.dto.TokenResponse;
 import com.pawzaar.user.dto.UpdateProfileRequest;
 import com.pawzaar.user.dto.UserResponse;
 import com.pawzaar.user.repository.EmailVerificationTokenRepository;
+import com.pawzaar.user.repository.PasswordResetTokenRepository;
 import com.pawzaar.user.repository.RefreshTokenRepository;
 import com.pawzaar.user.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -99,6 +102,9 @@ public class AuthService {
     // M4d: stores the SHA-256 hashes of email-verification tokens (single-use; see V12).
     private final EmailVerificationTokenRepository emailVerificationTokenRepository;
 
+    // Password reset: stores the SHA-256 hashes of reset tokens (single-use; see V13).
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
+
     // M4d: delivers the verification link. The dev bean logs it; a real deployment swaps in SMTP.
     private final EmailSender emailSender;
 
@@ -119,6 +125,7 @@ public class AuthService {
                        ImageValidator imageValidator,
                        @Qualifier("profileImageStorage") ImageStorage profileImageStorage,
                        EmailVerificationTokenRepository emailVerificationTokenRepository,
+                       PasswordResetTokenRepository passwordResetTokenRepository,
                        EmailSender emailSender,
                        EmailProperties emailProperties) {
         this.userRepository = userRepository;
@@ -130,6 +137,7 @@ public class AuthService {
         this.imageValidator = imageValidator;
         this.profileImageStorage = profileImageStorage;
         this.emailVerificationTokenRepository = emailVerificationTokenRepository;
+        this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.emailSender = emailSender;
         this.emailProperties = emailProperties;
         // One hash computed at startup (~100ms, once) - see the field comment.
@@ -247,6 +255,85 @@ public class AuthService {
                 + "If you did not create a Pawzaar account, you can ignore this message.";
 
         emailSender.send(user.getEmail(), emailProperties.getVerificationSubject(), body);
+    }
+
+    // ── password reset ─────────────────────────────────────────────────────────
+
+    /**
+     * Starts a password reset for the given address. ALWAYS succeeds, whether or not the email is
+     * registered: revealing that an address has an account is enumeration, so the caller cannot tell
+     * the two cases apart.
+     *
+     * <p>When the account does exist, any outstanding reset link is retired and a fresh single-use
+     * token (stored only as its SHA-256 hash) is emailed.
+     */
+    @Transactional
+    public void requestPasswordReset(String rawEmail) {
+        String email = rawEmail.trim().toLowerCase(Locale.ROOT);
+        userRepository.findByEmail(email).ifPresent(this::sendPasswordResetEmail);
+    }
+
+    /**
+     * Completes a password reset: consumes the emailed token and replaces the stored password hash.
+     *
+     * <p>Single-use and atomic - {@link PasswordResetTokenRepository#consumeIfActive} flips
+     * {@code used} in one conditional UPDATE (checking expiry in the same statement), so two requests
+     * racing on the same link cannot both succeed. Unknown, expired and already-spent tokens all
+     * produce the same generic error, so token state cannot be probed.
+     *
+     * <p>A successful reset also revokes every refresh token for the account: if the reset was
+     * triggered because the account was compromised, the attacker's session must die immediately.
+     *
+     * @throws InvalidResetTokenException if the token is unknown, expired, or already used
+     */
+    @Transactional
+    public void resetPassword(String rawToken, String newPassword) {
+        String tokenHash = sha256Hex(rawToken);
+        PasswordResetToken token = passwordResetTokenRepository.findByTokenHash(tokenHash)
+                .orElseThrow(InvalidResetTokenException::new);
+
+        // Claim it atomically; 0 means it was already spent or has expired.
+        if (passwordResetTokenRepository.consumeIfActive(tokenHash, Instant.now()) == 0) {
+            throw new InvalidResetTokenException();
+        }
+
+        User user = userRepository.findById(token.getUserId())
+                // The FK guarantees the user existed when the token was issued; a missing row means
+                // the account was deleted since, which is indistinguishable from a bad token.
+                .orElseThrow(InvalidResetTokenException::new);
+
+        user.changePassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+
+        // Cut every existing session, and retire any other outstanding reset link besides the one
+        // just spent.
+        refreshTokenRepository.revokeAllForUser(user.getId());
+        passwordResetTokenRepository.invalidateAllForUser(user.getId());
+    }
+
+    /**
+     * Issues a fresh reset token for the user and hands the link to the {@link EmailSender}.
+     *
+     * <p>Only the SHA-256 hash is persisted; the raw token exists just long enough to build the link.
+     * Any previously issued token is retired first, so a newer link supersedes an older one.
+     */
+    private void sendPasswordResetEmail(User user) {
+        passwordResetTokenRepository.invalidateAllForUser(user.getId());
+
+        String rawToken = generateRawToken();
+        passwordResetTokenRepository.save(PasswordResetToken.issue(
+                user.getId(),
+                sha256Hex(rawToken),
+                Instant.now().plus(emailProperties.getResetValidity())));
+
+        String link = emailProperties.getResetBaseUrl() + "?token=" + rawToken;
+        String body = "Hi " + user.getDisplayName() + ",\n\n"
+                + "We received a request to reset your Pawzaar password. Open this link to choose a new one:\n"
+                + link + "\n\n"
+                + "It expires in " + emailProperties.getResetValidity().toMinutes() + " minutes. "
+                + "If you did not request this, you can safely ignore this email - your password will not change.";
+
+        emailSender.send(user.getEmail(), emailProperties.getResetSubject(), body);
     }
 
     /**

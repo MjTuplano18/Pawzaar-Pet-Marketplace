@@ -17,6 +17,7 @@ import com.pawzaar.user.AvatarNotFoundException;             // "no avatar set" 
 import com.pawzaar.user.EmailAlreadyRegisteredException;   // "email already taken"     -> 409
 import com.pawzaar.user.InvalidCredentialsException;       // "login failed"            -> 401
 import com.pawzaar.user.InvalidRefreshTokenException;      // "refresh token bad"       -> 401
+import com.pawzaar.user.InvalidResetTokenException;         // "reset token bad"         -> 400
 import com.pawzaar.user.InvalidVerificationTokenException; // "verify token bad"        -> 400
 import com.pawzaar.user.UserNotFoundException;             // "user no longer exists"   -> 404
 
@@ -219,6 +220,20 @@ public class GlobalExceptionHandler {
                 HttpStatus.BAD_REQUEST,        // 400
                 ex.getMessage());              // "Verification token is invalid or expired"
         problem.setTitle("Invalid verification token");
+        return problem;
+    }
+
+    // 400 Bad Request: POST /auth/reset-password was given a token that is unknown, expired, or
+    // already used. Same generic message for all three, so token state cannot be probed, and 400
+    // (invalid input) rather than 401, matching the verification handler above.
+    @ExceptionHandler(InvalidResetTokenException.class)
+    public ProblemDetail handleInvalidResetToken(InvalidResetTokenException ex) {
+        // M10: record the failure, but never log the token itself - it is a credential.
+        log.warn("Password reset failed: token rejected");
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,        // 400
+                ex.getMessage());              // "Password reset token is invalid or expired"
+        problem.setTitle("Invalid reset token");
         return problem;
     }
 

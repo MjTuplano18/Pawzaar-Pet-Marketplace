@@ -107,6 +107,10 @@ pawzaar:
     # The SPA route the link points at; the raw token is appended as ?token=<value>.
     verification-base-url: ${PAWZAAR_EMAIL_VERIFICATION_BASE_URL:http://localhost:5173/verify-email}
     verification-subject: ${PAWZAAR_EMAIL_VERIFICATION_SUBJECT:Verify your Pawzaar email address}
+    # Password reset: a shorter-lived link (it can take over an account) and its own SPA route.
+    reset-validity: ${PAWZAAR_EMAIL_RESET_VALIDITY:1h}
+    reset-base-url: ${PAWZAAR_EMAIL_RESET_BASE_URL:http://localhost:5173/reset-password}
+    reset-subject: ${PAWZAAR_EMAIL_RESET_SUBJECT:Reset your Pawzaar password}
     # Print the message body (which carries the link/token) in the log. DEV ONLY - keep it false
     # everywhere else so verification tokens never end up in logs.
     log-body: ${PAWZAAR_EMAIL_LOG_BODY:false}

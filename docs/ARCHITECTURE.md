@@ -42,11 +42,12 @@ Currently implemented (the table tracks how far the build has come):
 | **Search & filtering** on `GET /pets` (optional filters + sort allowlist) | ✅ done (Step 10) |
 | Pet detail with a clean 404 (`GET /pets/{id}`) | ✅ done |
 | One consistent error format (RFC 9457) | ✅ done |
-| Automated tests (web slice + DB slice + unit) | ✅ 224 tests |
+| Automated tests (web slice + DB slice + unit) | ✅ 243 tests |
 | User registration with hashed passwords | ✅ done |
 | Login + JWT issuance, token verification on protected routes | ✅ done (Step 6.3) |
 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ done |
 | **Email verification** (single-use token, `POST /auth/verify-email`) | ✅ done |
+| **Password reset** (single-use token, `POST /auth/forgot-password` + `/auth/reset-password`) | ✅ done |
 | Seller endpoints that use the token for **authorization** (ownership) | ✅ done (Step 7) |
 | `USER` → `SELLER` promotion on first listing | ✅ done |
 | **Role-based authorization** via `@PreAuthorize` (seller-only writes) | ✅ done (Step 9) |
@@ -138,7 +139,7 @@ PawzaarApiApplication.main()
    │                            starter-webmvc   → embedded Tomcat + Jackson
    │                            starter-data-jpa → Hibernate + HikariCP connection pool
    │                            starter-security → the security filter chain
-   │                            starter-flyway   → run pending migrations (V1 … V12)
+   │                            starter-flyway   → run pending migrations (V1 … V13)
    │
    ├─ ③ SCHEMA VALIDATION       ddl-auto: validate → "does Pet match the pets table?"
    │                            (any mismatch → startup FAILS loudly)
@@ -248,15 +249,17 @@ com.pawzaar
     ├── User.java, Role.java
     ├── RefreshToken.java        entity: stored (hashed) refresh tokens
     ├── EmailVerificationToken.java  entity: single-use, hashed verification tokens (M4d)
+    ├── PasswordResetToken.java  entity: single-use, hashed password-reset tokens
     ├── EmailAlreadyRegisteredException.java
     ├── InvalidCredentialsException.java
     ├── InvalidRefreshTokenException.java
     ├── InvalidVerificationTokenException.java
+    ├── InvalidResetTokenException.java
     ├── dto/       RegisterRequest, UserResponse, LoginRequest, RefreshRequest,
-    │              VerifyEmailRequest, TokenResponse
+    │              VerifyEmailRequest, ForgotPasswordRequest, ResetPasswordRequest, TokenResponse
     ├── repository/ UserRepository.java, RefreshTokenRepository.java,
-    │              EmailVerificationTokenRepository.java
-    ├── service/    AuthService.java     (register, login, refresh, logout, verify email)
+    │              EmailVerificationTokenRepository.java, PasswordResetTokenRepository.java
+    ├── service/    AuthService.java     (register, login, refresh, logout, verify email, reset password)
     └── controller/ AuthController.java
 ```
 
@@ -880,6 +883,46 @@ product decision left open, and the flag is now populated so it can be switched 
 migration. Bad, expired and already-used tokens all return the same `400` `problem+json`, so token
 state cannot be probed.
 
+### 6.28 Password reset
+
+A user who forgot their password must prove they control the account's mailbox before choosing a new
+one — the same "open a link only that mailbox receives" proof as email verification, so the feature
+reuses that machinery almost verbatim.
+
+```text
+POST /auth/forgot-password { email }
+  → findByEmail(email).ifPresent(this::sendPasswordResetEmail)   ALWAYS 204 (no enumeration)
+  → invalidateAllForUser(userId)                retire any older link
+  → PasswordResetToken.issue(sha256(raw))        store the HASH, single-use, 1h TTL (V13)
+  → EmailSender.send(email, link?token=raw)      LOG in dev; SMTP in prod (transport switch)
+
+POST /auth/reset-password { token, newPassword }
+  → consumeIfActive(sha256(token))               one conditional UPDATE: unused AND not expired
+  → user.changePassword(bcrypt(newPassword)); save(user)
+  → refreshTokenRepository.revokeAllForUser(userId)   every existing session is cut
+  → passwordResetTokenRepository.invalidateAllForUser(userId)   retire any other live link
+  → 204
+```
+
+| Piece | Responsibility |
+|---|---|
+| `user/PasswordResetToken` | the row; only the SHA-256 hash is stored, exactly like `EmailVerificationToken` |
+| `PasswordResetTokenRepository` | `consumeIfActive` (single-use) and `invalidateAllForUser` (new link / successful reset supersedes) |
+| `user/dto/ForgotPasswordRequest` | the `{ "email": ... }` body; no secret, so no masked `toString()` |
+| `user/dto/ResetPasswordRequest` | the `{ "token", "newPassword" }` body; masks BOTH fields in `toString()` |
+| `user/InvalidResetTokenException` | unknown/expired/spent token → `400` with a generic message |
+
+**No account enumeration.** `POST /auth/forgot-password` returns 204 whether or not the address is
+registered — revealing that an email *has* an account is itself a leak. The email is only sent when
+the account exists; the observable response is identical either way.
+
+**The reset kills every session.** A reset is the standard response to a suspected compromise, so on
+success the service revokes every refresh token for the account (H3's `revokeAllForUser`) — an
+attacker holding a live refresh token loses it immediately — and retires any other outstanding reset
+link. The TTL is deliberately shorter than a verification link's (1h vs 24h): a reset link can take
+over an account. Unknown, expired and already-used tokens all return the same generic `400`, so token
+state cannot be probed, and both routes sit behind the auth rate limiter.
+
 ---
 
 ## 7. Journey of one request (end to end)
@@ -967,6 +1010,7 @@ ProblemDetail  →  application/problem+json
 | `permitAll(POST, "/api/v1/auth/register", "/api/v1/auth/login")` | you must be able to register/log in without a token |
 | `permitAll(POST, "/api/v1/auth/refresh", "/api/v1/auth/logout")` | refresh/logout are authenticated by the refresh token in the body, not by an access token |
 | `permitAll(POST, "/api/v1/auth/verify-email")` | the emailed verification token is the credential; the user may not be logged in yet |
+| `permitAll(POST, "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password")` | reset links: `/forgot-password` because the user cannot log in, `/reset-password` because the emailed token is the credential |
 | `anyRequest().authenticated()` | everything else needs credentials (incl. `/auth/verify-email/resend`) |
 
 The browser-facing CORS rules live in `CorsConfig` (a `CorsConfigurationSource` bean) and are
@@ -1062,6 +1106,7 @@ pets:   id, seller_id → users(id), title, species, breed?, age_months, price,
 pet_images: id, pet_id → pets(id), storage_key(UNIQUE), content_type, size_bytes, sort_order, created_at
 refresh_tokens: id, user_id → users(id), token_hash(UNIQUE), expires_at, revoked, created_at
 email_verification_tokens: id, user_id → users(id), token_hash(UNIQUE), expires_at, used, created_at
+password_reset_tokens: id, user_id → users(id), token_hash(UNIQUE), expires_at, used, created_at
 ```
 
 Indexes on `pets`: `(status, created_at DESC)`, `(species, breed)`, `(province, city)`,
@@ -1088,6 +1133,7 @@ the batch cover lookup (`pet_id`, `0`) used by the list endpoint.
 | `V10__remove_seed_data.sql` | removed the `V3`/`V5` demo seller + pets from **every** environment (C1); dev sample data moved to `db/migration-dev` |
 | `V11__unique_pet_image_sort_order.sql` | added `UNIQUE(pet_id, sort_order)` and dropped the now-redundant `idx_pet_images_pet` (H4) |
 | `V12__create_email_verification_tokens.sql` | created `email_verification_tokens` (single-use, hashed, expiring) for M4d |
+| `V13__create_password_reset_tokens.sql` | created `password_reset_tokens` (single-use, hashed, expiring) for the password-reset flow |
 
 **Rules:**
 
@@ -1139,7 +1185,7 @@ Controller  →  returns PetResponse (DTO)     ← entities never reach here
 | `PetImageServiceTest` (plain Mockito) | nothing | ❌ | owner-only upload/delete, file cleanup when the row write fails, hiding a non-`ACTIVE` listing's images |
 | `PawzaarApiApplicationTests` (`@SpringBootTest`) | everything | ✅ | the whole context starts |
 
-Current total: **224 tests**, all green with `mvn test`.
+Current total: **243 tests**, all green with `mvn test`.
 
 ```bash
 .\mvnw.cmd test                                            # all tests

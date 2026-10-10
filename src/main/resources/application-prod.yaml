@@ -51,16 +51,21 @@ pawzaar:
       document-bucket: ${SUPABASE_DOCUMENT_BUCKET}
       service-key: ${SUPABASE_SERVICE_KEY}
   email:
-    # M4d-2: production delivers real mail. Set on the host (standard Spring Boot keys):
-    #   SPRING_MAIL_HOST, SPRING_MAIL_PORT=587, SPRING_MAIL_USERNAME, SPRING_MAIL_PASSWORD,
+    # M4d-2: production delivers real mail. Recommended free provider: Resend (https://resend.com).
+    # Set on the host (standard Spring Boot keys):
+    #   SPRING_MAIL_HOST=smtp.resend.com, SPRING_MAIL_PORT=465,
+    #   SPRING_MAIL_USERNAME=resend, SPRING_MAIL_PASSWORD=<your Resend API key>,
     #   SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH=true,
-    #   SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE=true
+    #   SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE=true
+    # (Brevo, Gmail, SES and SendGrid work the same way - only the host/port/auth differ.)
     # Starting with transport=smtp but no SPRING_MAIL_HOST fails fast (see EmailConfig) so we never
-    # silently drop verification emails. Set PAWZAAR_EMAIL_TRANSPORT=log to opt out (dev/CI only).
+    # silently drop mail. Set PAWZAAR_EMAIL_TRANSPORT=log to opt out (dev/CI only).
     transport: ${PAWZAAR_EMAIL_TRANSPORT:smtp}
     # M4d: the public front-end route the verification link must point at.
     verification-base-url: ${PAWZAAR_EMAIL_VERIFICATION_BASE_URL}
-    # Never print message bodies in production - they carry live verification tokens.
+    # Password reset: the public front-end route the reset link must point at (required, no fallback).
+    reset-base-url: ${PAWZAAR_EMAIL_RESET_BASE_URL}
+    # Never print message bodies in production - they carry live verification/reset tokens.
     log-body: false
 
 # H7: the OpenAPI document describes every route, parameter and schema - a map for an attacker.

@@ -131,6 +131,15 @@ public class User {
         this.verified = true;
     }
 
+    /**
+     * Replaces the stored password hash after a verified password reset. The hash must arrive
+     * ALREADY hashed (AuthService runs the encoder); a domain method rather than a setter keeps the
+     * "no raw password ever reaches the entity" rule and makes the intent explicit at the call site.
+     */
+    public void changePassword(String newHash) {
+        this.passwordHash = newHash;
+    }
+
     // Lifecycle callback: Spring/Hibernate calls this automatically just before every INSERT,
     // so no caller can forget to set the timestamp.
     @PrePersist

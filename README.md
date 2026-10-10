@@ -28,6 +28,9 @@ stateless JWT auth with refresh-token rotation, role-based authorization, automa
 - **Email verification** — registration sends a single-use, expiring link; `POST /auth/verify-email`
   marks the account verified. The default sender **logs** the link in dev (no SMTP account needed);
   swap in a real `EmailSender` bean for production. Nothing is gated on the flag yet.
+- **Password reset** — `POST /auth/forgot-password` always answers 204 (so it can't enumerate
+  accounts) and emails a short-lived, single-use link; `POST /auth/reset-password` sets the new
+  password and revokes every active session.
 - **Authorization** — URL rules plus method-level `@PreAuthorize`: any authenticated user may post a
   listing, but only `SELLER`s may edit or delete, on top of a service-layer ownership check.
 - **One error format** — every error is an RFC 9457 `application/problem+json` response.
@@ -42,7 +45,7 @@ stateless JWT auth with refresh-token rotation, role-based authorization, automa
 - **Observability & docs** — Actuator health probes (liveness/readiness), Swagger UI (dev/test only),
   and structured logging: every response carries an `X-Request-Id` header that is also stamped into the
   server logs, 5xx errors / storage failures / auth failures are logged (never passwords or tokens).
-- **Quality gates** — 224 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds and
+- **Quality gates** — 243 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds and
   tests every push; `.\verify-local.ps1` runs the same checks (plus a live smoke test) locally.
 
 ---
@@ -138,6 +141,8 @@ All routes are versioned under `/api/v1`.
 | `POST` | `/auth/logout` | public\* | revoke a refresh token (204) |
 | `POST` | `/auth/verify-email` | public | consume the emailed token, mark the account verified (204) |
 | `POST` | `/auth/verify-email/resend` | bearer | send a fresh verification link (204) |
+| `POST` | `/auth/forgot-password` | public | email a password-reset link (204, always) |
+| `POST` | `/auth/reset-password` | public | set a new password from the emailed token (204) |
 | `GET` | `/pets` | public | paginated, filterable, sortable `ACTIVE` listings |
 | `GET` | `/pets/{id}` | public | one `ACTIVE` listing (404 otherwise) |
 | `POST` | `/pets` | USER/SELLER | create a listing (201 + `Location`) |
@@ -169,12 +174,23 @@ returns **429** `problem+json` with a `Retry-After` header.
 > tests need no mail account. Run with the `dev` profile (`pawzaar.email.log-body=true`) and copy the
 > `...?token=...` link from the console. For real delivery (M4d-2) set `pawzaar.email.transport=smtp`
 > and the standard `SPRING_MAIL_*` settings (`SPRING_MAIL_HOST`, `SPRING_MAIL_PORT`,
-> `SPRING_MAIL_USERNAME`, `SPRING_MAIL_PASSWORD`, `...MAIL_SMTP_AUTH=true`, `...MAIL_SMTP_STARTTLS_ENABLE=true`)
-> — Mailtrap, Gmail, SES and SendGrid all work. With `smtp` selected but no mail host the app fails
+> `SPRING_MAIL_USERNAME`, `SPRING_MAIL_PASSWORD`, `...MAIL_SMTP_AUTH=true`, `...MAIL_SMTP_STARTTLS_ENABLE=true`).
+> For a **free** option, [Resend](https://resend.com) works well: `SPRING_MAIL_HOST=smtp.resend.com`,
+> `SPRING_MAIL_PORT=465`, `SPRING_MAIL_USERNAME=resend`, `SPRING_MAIL_PASSWORD=<your API key>`, and
+> `...MAIL_SMTP_SSL_ENABLE=true`. Mailtrap, Gmail, SES and SendGrid all work the same way. With `smtp`
+> selected but no mail host the app fails
 > fast instead of silently dropping mail; a custom `EmailSender` bean still takes over and
 > `EmailConfig` backs off automatically. Bad, expired and already-used tokens all return **400**
 > `problem+json`; `/auth/verify-email` is rate limited and `/auth/verify-email/resend` requires a
 > bearer token.
+
+> **Password reset.** `POST /auth/forgot-password` takes `{ "email": ... }` and **always** answers
+> **204** — whether or not the address is registered — so it cannot be used to enumerate accounts.
+> When the account does exist it emails a single-use link (stored only as its SHA-256 hash, 1h TTL).
+> `POST /auth/reset-password` takes `{ "token": ..., "newPassword": ... }`, is public (the emailed
+> token *is* the credential), and on success **revokes every refresh token** for the account so a
+> compromised session dies immediately. A bad/expired/already-used token returns **400**
+> `problem+json` with a deliberately generic message. Both routes are rate limited.
 
 List endpoints are paginated (`?page=0&size=20`) and the page size is hard-capped at **50**.
 

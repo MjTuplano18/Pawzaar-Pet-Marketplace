@@ -26,6 +26,15 @@ public class EmailProperties {
     /** The subject line of the verification email. */
     private String verificationSubject = "Verify your Pawzaar email address";
 
+    /** How long a password-reset link stays valid. Shorter than verification: it can take over an account. */
+    private Duration resetValidity = Duration.ofHours(1);
+
+    /** The SPA route the reset link points at; the raw token is appended as {@code ?token=}. */
+    private String resetBaseUrl = "http://localhost:5173/reset-password";
+
+    /** The subject line of the password-reset email. */
+    private String resetSubject = "Reset your Pawzaar password";
+
     /**
      * Whether {@link LoggingEmailSender} prints the full message body. The body contains the
      * verification link (and therefore its token), so this is a development-only convenience.
@@ -70,6 +79,30 @@ public class EmailProperties {
 
     public void setVerificationSubject(String verificationSubject) {
         this.verificationSubject = verificationSubject;
+    }
+
+    public Duration getResetValidity() {
+        return resetValidity;
+    }
+
+    public void setResetValidity(Duration resetValidity) {
+        this.resetValidity = resetValidity;
+    }
+
+    public String getResetBaseUrl() {
+        return resetBaseUrl;
+    }
+
+    public void setResetBaseUrl(String resetBaseUrl) {
+        this.resetBaseUrl = resetBaseUrl;
+    }
+
+    public String getResetSubject() {
+        return resetSubject;
+    }
+
+    public void setResetSubject(String resetSubject) {
+        this.resetSubject = resetSubject;
     }
 
     public boolean isLogBody() {

@@ -11,7 +11,9 @@ import com.pawzaar.user.AvatarNotFoundException;
 import com.pawzaar.user.EmailVerificationToken;
 import com.pawzaar.user.InvalidCredentialsException;
 import com.pawzaar.user.InvalidRefreshTokenException;
+import com.pawzaar.user.InvalidResetTokenException;
 import com.pawzaar.user.InvalidVerificationTokenException;
+import com.pawzaar.user.PasswordResetToken;
 import com.pawzaar.user.RefreshToken;
 import com.pawzaar.user.Role;
 import com.pawzaar.user.User;
@@ -22,6 +24,7 @@ import com.pawzaar.user.dto.TokenResponse;
 import com.pawzaar.user.dto.UpdateProfileRequest;
 import com.pawzaar.user.dto.UserResponse;
 import com.pawzaar.user.repository.EmailVerificationTokenRepository;
+import com.pawzaar.user.repository.PasswordResetTokenRepository;
 import com.pawzaar.user.repository.RefreshTokenRepository;
 import com.pawzaar.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -94,6 +97,10 @@ class AuthServiceTest {
     @Mock
     private EmailSender emailSender;
 
+    // Password reset
+    @Mock
+    private PasswordResetTokenRepository passwordResetTokenRepository;
+
     // Real properties object (plain class, no Spring needed) so the token lifetime/links are real.
     private final EmailProperties emailProperties = new EmailProperties();
 
@@ -114,6 +121,7 @@ class AuthServiceTest {
                 imageValidator,
                 profileImageStorage,
                 emailVerificationTokenRepository,
+                passwordResetTokenRepository,
                 emailSender,
                 emailProperties);
     }
@@ -539,6 +547,94 @@ class AuthServiceTest {
 
         verify(emailSender, never()).send(anyString(), anyString(), anyString());
         verify(emailVerificationTokenRepository, never()).save(any(EmailVerificationToken.class));
+    }
+
+    // ── password reset ────────────────────────────────────────────────────────
+
+    @Test
+    void requestPasswordResetStoresOnlyTheTokenHashAndEmailsTheLink() {
+        User user = userWithHash(realEncoder.encode("pawzaar123"));
+        when(userRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user));
+        ArgumentCaptor<String> body = ArgumentCaptor.forClass(String.class);
+
+        authService.requestPasswordReset("  ANA@Pawzaar.TEST  ");
+
+        // A reset link was emailed to the account address...
+        verify(emailSender).send(eq(EMAIL), anyString(), body.capture());
+        String rawToken = tokenFromLink(body.getValue());
+
+        // ...any earlier outstanding link was retired...
+        verify(passwordResetTokenRepository).invalidateAllForUser(user.getId());
+
+        // ...and only the SHA-256 of the emailed token was persisted.
+        ArgumentCaptor<PasswordResetToken> stored =
+                ArgumentCaptor.forClass(PasswordResetToken.class);
+        verify(passwordResetTokenRepository).save(stored.capture());
+        assertEquals(sha256Hex(rawToken), stored.getValue().getTokenHash());
+        assertNotEquals(rawToken, stored.getValue().getTokenHash());
+    }
+
+    @Test
+    void requestPasswordResetForAnUnknownEmailIsSilent() {
+        // Enumeration defence: the caller gets the same (empty) outcome either way, so an unknown
+        // address must NOT trigger a send and must NOT throw.
+        when(userRepository.findByEmail("ghost@pawzaar.test")).thenReturn(Optional.empty());
+
+        authService.requestPasswordReset("ghost@pawzaar.test");
+
+        verify(emailSender, never()).send(anyString(), anyString(), anyString());
+        verify(passwordResetTokenRepository, never()).save(any(PasswordResetToken.class));
+    }
+
+    @Test
+    void resetPasswordChangesTheHashAndRevokesEverySession() {
+        User user = userWithHash(realEncoder.encode("old-password"));
+        PasswordResetToken token = PasswordResetToken.issue(
+                user.getId(), "irrelevant-hash", Instant.now().plusSeconds(3600));
+        when(passwordResetTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(token));
+        when(passwordResetTokenRepository.consumeIfActive(anyString(), any(Instant.class))).thenReturn(1);
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        authService.resetPassword("some-raw-token", "new-pawzaar-password");
+
+        // The stored hash is the NEW password (never the raw value)...
+        assertTrue(realEncoder.matches("new-pawzaar-password", user.getPasswordHash()));
+        assertFalse(realEncoder.matches("old-password", user.getPasswordHash()));
+        verify(userRepository).save(user);
+
+        // ...the token is single-use (claimed by the conditional UPDATE)...
+        verify(passwordResetTokenRepository).consumeIfActive(anyString(), any(Instant.class));
+        // ...every existing session is cut, and any other outstanding link retired.
+        verify(refreshTokenRepository).revokeAllForUser(user.getId());
+        verify(passwordResetTokenRepository).invalidateAllForUser(user.getId());
+    }
+
+    @Test
+    void resetPasswordRejectsAnUnknownToken() {
+        when(passwordResetTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.empty());
+
+        assertThrows(InvalidResetTokenException.class,
+                () -> authService.resetPassword("nope", "new-pawzaar-password"));
+
+        verify(userRepository, never()).save(any(User.class));
+        verify(refreshTokenRepository, never()).revokeAllForUser(any());
+    }
+
+    @Test
+    void resetPasswordRejectsATokenThatIsExpiredOrAlreadyUsed() {
+        User user = userWithHash(realEncoder.encode("old-password"));
+        PasswordResetToken token = PasswordResetToken.issue(
+                user.getId(), "hash", Instant.now().plusSeconds(3600));
+        when(passwordResetTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(token));
+        // 0 rows changed = it was already spent or has expired.
+        when(passwordResetTokenRepository.consumeIfActive(anyString(), any(Instant.class))).thenReturn(0);
+
+        assertThrows(InvalidResetTokenException.class,
+                () -> authService.resetPassword("stale", "new-pawzaar-password"));
+
+        verify(userRepository, never()).save(any(User.class));
+        verify(refreshTokenRepository, never()).revokeAllForUser(any());
     }
 
     /** Pulls the raw token out of a body of the form "...?token=<value>\n\n...". */
