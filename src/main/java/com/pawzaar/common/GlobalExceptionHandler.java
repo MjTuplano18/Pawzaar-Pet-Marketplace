@@ -34,6 +34,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;     // "this ex
 import org.springframework.web.bind.annotation.RestControllerAdvice;  // applies to ALL controllers
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;  // bad UUID -> 400
 import org.springframework.web.multipart.MaxUploadSizeExceededException;  // body over multipart limit -> 413
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 // @Valid on a @RequestParam/@PathVariable is method validation, which throws this (not MethodArgumentNotValidException).
 import jakarta.validation.ConstraintViolationException;
@@ -59,6 +61,8 @@ import java.util.List;  // needed for the errors array we attach to validation p
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     // Whenever ANY controller/service throws PetNotFoundException, Spring routes it here.
     @ExceptionHandler(PetNotFoundException.class)
@@ -140,6 +144,9 @@ public class GlobalExceptionHandler {
     // them enumerate registered accounts, so every failure returns the same vague message.
     @ExceptionHandler(InvalidCredentialsException.class)
     public ProblemDetail handleInvalidCredentials(InvalidCredentialsException ex) {
+        // M10: log the failure for ops WITHOUT the email or password (both are sensitive; the
+        // client already gets a deliberately vague message).
+        log.warn("Authentication failed: invalid credentials");
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
                 HttpStatus.UNAUTHORIZED,       // 401
                 ex.getMessage()                // "Invalid email or password"
@@ -177,6 +184,9 @@ public class GlobalExceptionHandler {
     // reason: never help an attacker tell the cases apart.
     @ExceptionHandler(InvalidRefreshTokenException.class)
     public ProblemDetail handleInvalidRefreshToken(InvalidRefreshTokenException ex) {
+        // M10: record the failure for ops. The token itself is NEVER logged - it is a bearer
+        // credential, and a single log line containing it would be enough to hijack the session.
+        log.warn("Authentication failed: refresh token rejected");
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
                 HttpStatus.UNAUTHORIZED,       // 401
                 ex.getMessage());              // "Refresh token is invalid or expired"
@@ -272,6 +282,9 @@ public class GlobalExceptionHandler {
     // stays generic so no infrastructure detail leaks to the client.
     @ExceptionHandler(ImageStorageException.class)
     public ProblemDetail handleImageStorage(ImageStorageException ex) {
+        // M10: this is a 5xx (upstream failure) - log it with the cause so a Supabase outage or a
+        // full disk is visible in prod. The cause is NOT sent to the client (see below).
+        log.error("Image storage operation failed", ex);
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
                 HttpStatus.BAD_GATEWAY,  // 502
                 "The image could not be stored or read right now");
@@ -409,8 +422,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleUnexpected(Exception ex) {
         if (ex instanceof ErrorResponse errorResponse) {
+            // A framework-resolved error (e.g. a missing required request parameter) already knows
+            // its 4xx status. It is NOT an internal fault, so it is not logged as an error here.
             return ResponseEntity.status(errorResponse.getStatusCode()).body(errorResponse.getBody());
         }
+        // M10: a true 500 is unexpected - log the full stack trace (the filter has already put the
+        // requestId in the MDC, so this line correlates with the response header) ...
+        log.error("Unhandled exception", ex);
+        // ... but never return the cause/detail to the client.
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
                 HttpStatus.INTERNAL_SERVER_ERROR,  // 500
                 "An unexpected error occurred");

@@ -75,3 +75,13 @@ management:
         enabled: true
       # The health route is public, so never leak database/disk details to anonymous callers.
       show-details: never
+
+# ── Logging (M10) ─────────────────────────────────────────────────────────────
+# Every log line carries the request id put in the MDC by RequestIdFilter, and the same value is
+# echoed in the X-Request-Id response header - so a user's failing request can be traced in the logs.
+logging:
+  pattern:
+    level: "%5p [requestId:%X{requestId:-none}]"
+  level:
+    # Keep Pawzaar's own logs at INFO (our code logs warnings/errors where it matters); quiet the noise.
+    com.pawzaar: ${PAWZAAR_LOG_LEVEL:INFO}

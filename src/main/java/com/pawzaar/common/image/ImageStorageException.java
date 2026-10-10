@@ -2,8 +2,8 @@ package com.pawzaar.common.image;
 
 /**
  * An infrastructure failure while reading or writing image bytes (disk full, no permission, ...).
- * This is a "should not normally happen" error, so the {@code GlobalExceptionHandler} renders it as
- * a plain {@code 500} - the client did nothing wrong and has nothing to fix.
+ * This is a failure of an UPSTREAM dependency, not of the client or this API, so the
+ * {@code GlobalExceptionHandler} renders it as {@code 502 Bad Gateway} and logs it (H8/M10).
  */
 public class ImageStorageException extends RuntimeException {
 

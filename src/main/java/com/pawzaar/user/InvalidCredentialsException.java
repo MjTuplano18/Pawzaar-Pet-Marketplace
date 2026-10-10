@@ -8,8 +8,8 @@ package com.pawzaar.user;
  * could probe our database to discover which addresses have accounts (user enumeration).
  * A vague message is a feature, not a bug.
  *
- * <p>The email is kept internally so the server could LOG the failed attempt - it is
- * deliberately NOT exposed to the client, so the response leaks nothing.
+ * <p>The email is kept internally for the record but is deliberately NEVER logged or exposed -
+ * neither the response nor the logs leak which addresses have accounts.
  */
 public class InvalidCredentialsException extends RuntimeException {
 
