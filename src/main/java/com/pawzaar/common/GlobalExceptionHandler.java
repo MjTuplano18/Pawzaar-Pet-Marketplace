@@ -11,6 +11,7 @@ import com.pawzaar.common.image.ImageTooLargeException;       // image over the 
 import com.pawzaar.common.image.InvalidImageException;        // empty/not a real image    -> 400
 import com.pawzaar.pet.image.PetImageNotFoundException;    // "no image with that id"   -> 404
 import com.pawzaar.common.image.UnsupportedImageTypeException;// bad image type            -> 415
+import com.pawzaar.user.AvatarNotFoundException;             // "no avatar set"           -> 404
 import com.pawzaar.user.EmailAlreadyRegisteredException;   // "email already taken"     -> 409
 import com.pawzaar.user.InvalidCredentialsException;       // "login failed"            -> 401
 import com.pawzaar.user.InvalidRefreshTokenException;      // "refresh token bad"       -> 401
@@ -201,6 +202,17 @@ public class GlobalExceptionHandler {
                 HttpStatus.NOT_FOUND,          // 404
                 ex.getMessage());              // "No user exists with id ..."
         problem.setTitle("User not found");
+        problem.setProperty("userId", ex.getUserId());
+        return problem;
+    }
+
+    // 404: GET /api/v1/me/avatar when the user has never set a profile picture.
+    @ExceptionHandler(AvatarNotFoundException.class)
+    public ProblemDetail handleAvatarNotFound(AvatarNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,          // 404
+                ex.getMessage());              // "User ... has no avatar"
+        problem.setTitle("Avatar not found");
         problem.setProperty("userId", ex.getUserId());
         return problem;
     }

@@ -51,6 +51,7 @@ Currently implemented (through Step 10):
 | **Role-based authorization** via `@PreAuthorize` (seller-only writes) | ✅ done (Step 9) |
 | **Auth rate limiting** (per-IP token bucket → `429`) | ✅ done (Step 11) |
 | **Listing images**: owner upload, byte-level validation, public serve | ✅ done (Step 12) |
+| **User profile** (displayName/phone/bio) + one avatar per user | ✅ done (Step 13) |
 | Strict CORS allowlist | ✅ done |
 | OpenAPI/Swagger UI, profiles, actuator health | ✅ done |
 | GitHub Actions CI, `README`, multi-stage Dockerfile | ✅ done |
@@ -725,6 +726,33 @@ Decisions worth defending in an interview:
   is deleted immediately — otherwise it becomes an orphan the app can never reach.
 * **Cover image = sort order 0.** Cards need exactly one image, so the list endpoint fetches
   `sort_order = 0` for the whole page in a single query.
+
+### 6.25 Avatars — the same storage layer, one file per user
+
+A user has exactly ONE avatar (a profile picture), so it needs no child table — two nullable columns
+(`avatar_storage_key`, `avatar_content_type`) on the `users` row. The columns hold only what serving
+requires: an opaque key and the MIME type verified at upload time.
+
+```text
+POST /api/v1/me/avatar (multipart "file")   → AuthService.setAvatar
+    ImageValidator.validate(file)           same allowlist + magic-byte sniff as pet images
+    profileImageStorage.store(bytes)        bucket pawzaar-user-profile (the @Qualifier bean)
+    save new key + type on the user row     …then delete the OLD file (deleteQuietly)
+GET  /api/v1/me/avatar                      streams the bytes; 404 (AvatarNotFoundException) if none
+DELETE /api/v1/me/avatar                    clears the row + deletes the file; idempotent 204
+```
+
+Deviations from the pet-image pattern, and why:
+
+* **Ownership is free.** `@AuthenticationPrincipal Jwt` already is this user — the `sub` claim is the
+  user id, so there is no "does the caller own it?" check to write.
+* **Write new → save row → delete old.** The new file is written first; if the row update fails the
+  fresh file is deleted so it cannot become an orphan. Only then is the previous avatar removed.
+* **`deleteQuietly` swallows cleanup failures.** The old key is no longer referenced by any row, so a
+  leftover object is invisible and harmless; failing the whole upload because a cleanup delete failed
+  would be worse.
+* **The URL is derived, never stored** (`avatarUrl` = `/api/v1/me/avatar` when a key exists, else
+  `null`), so the key can never leak into a JSON response.
 
 ---
 

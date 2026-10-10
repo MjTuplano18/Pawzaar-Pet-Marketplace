@@ -1,5 +1,13 @@
 package com.pawzaar.user.service;
 
+// === avatar storage ===
+import com.pawzaar.common.image.ImageStorage;
+import com.pawzaar.common.image.ImageStorageException;
+import com.pawzaar.common.image.ImageValidator;
+import com.pawzaar.common.image.ServedImage;
+import com.pawzaar.common.image.ValidatedImage;
+
+import com.pawzaar.user.AvatarNotFoundException;
 import com.pawzaar.user.EmailAlreadyRegisteredException;
 import com.pawzaar.user.InvalidCredentialsException;
 import com.pawzaar.user.InvalidRefreshTokenException;
@@ -13,6 +21,7 @@ import com.pawzaar.user.dto.UpdateProfileRequest;
 import com.pawzaar.user.dto.UserResponse;
 import com.pawzaar.user.repository.RefreshTokenRepository;
 import com.pawzaar.user.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -21,6 +30,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -72,6 +82,13 @@ public class AuthService {
     // How long a refresh token lives (a Duration bean from JwtConfig).
     private final Duration refreshTokenValidity;
 
+    // The avatar is stored in the PROFILE-picture bucket (pawzaar-user-profile). @Qualifier is
+    // required here because THREE ImageStorage beans now exist; the pet feature takes the other one.
+    private final ImageStorage profileImageStorage;
+
+    // Same allowlist + magic-byte sniffing rules that protect pet images.
+    private final ImageValidator imageValidator;
+
     // One SecureRandom for the whole service: it is thread-safe and seeding it is expensive.
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -82,13 +99,17 @@ public class AuthService {
                        JwtEncoder jwtEncoder,
                        Duration accessTokenValidity,
                        RefreshTokenRepository refreshTokenRepository,
-                       Duration refreshTokenValidity) {
+                       Duration refreshTokenValidity,
+                       ImageValidator imageValidator,
+                       @Qualifier("profileImageStorage") ImageStorage profileImageStorage) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtEncoder = jwtEncoder;
         this.accessTokenValidity = accessTokenValidity;
         this.refreshTokenRepository = refreshTokenRepository;
         this.refreshTokenValidity = refreshTokenValidity;
+        this.imageValidator = imageValidator;
+        this.profileImageStorage = profileImageStorage;
         // One hash computed at startup (~100ms, once) - see the field comment.
         this.dummyHash = passwordEncoder.encode("pawzaar-dummy-password-for-timing-only");
     }
@@ -241,6 +262,86 @@ public class AuthService {
         return (value == null || value.isBlank()) ? null : value.trim();
     }
 
+    // ── avatar (POST/GET/DELETE /api/v1/me/avatar) ─────────────────────────────
+
+    /**
+     * Sets - or REPLACES - the caller's avatar.
+     *
+     * <p>Order matters, and mirrors {@code PetImageService}: store the new file FIRST, then persist
+     * the new key; if the database write fails, the just-stored file is deleted so it cannot become
+     * an orphan. Only after the new avatar is safely saved is the OLD file removed. A failed cleanup
+     * of the old file is tolerated: a stale object nobody references anymore is harmless.
+     */
+    @Transactional
+    public UserResponse setAvatar(UUID userId, MultipartFile file) {
+        User user = findUser(userId);
+
+        ValidatedImage validated = imageValidator.validate(file);
+        String newKey = profileImageStorage.store(validated.data(), validated.extension());
+
+        String oldKey = user.getAvatarStorageKey();
+        try {
+            user.setAvatarStorageKey(newKey);
+            user.setAvatarContentType(validated.contentType());
+            User saved = userRepository.save(user);
+            deleteQuietly(oldKey);   // replaces the previous avatar, so its file is now dead
+            return toResponse(saved);
+        } catch (RuntimeException e) {
+            // The database write failed: remove the file we just wrote so it does not linger.
+            profileImageStorage.delete(newKey);
+            throw e;
+        }
+    }
+
+    /**
+     * Removes the avatar: clears the row's key/type and deletes the stored file. Idempotent, like
+     * the other DELETE endpoints - removing an avatar the user never had is still a 204.
+     */
+    @Transactional
+    public void removeAvatar(UUID userId) {
+        User user = findUser(userId);
+        String key = user.getAvatarStorageKey();
+        if (key == null) {
+            return;                  // nothing to remove - and no exception, so DELETE stays 204
+        }
+        user.setAvatarStorageKey(null);
+        user.setAvatarContentType(null);
+        userRepository.save(user);
+        deleteQuietly(key);
+    }
+
+    /**
+     * Reads the avatar's bytes plus the MIME type captured at upload time.
+     *
+     * @throws AvatarNotFoundException if the user has never set an avatar
+     */
+    @Transactional(readOnly = true)
+    public ServedImage getAvatar(UUID userId) {
+        User user = findUser(userId);
+        if (user.getAvatarStorageKey() == null) {
+            throw new AvatarNotFoundException(userId);
+        }
+        return new ServedImage(
+                profileImageStorage.load(user.getAvatarStorageKey()),
+                user.getAvatarContentType());
+    }
+
+    /**
+     * Deletes a stored object but swallows storage failures: the key is no longer referenced by any
+     * row, so a leftover object in the bucket is invisible and harmless (the API resolves the DB row
+     * first). A hard failure here must not roll back the avatar change the user just made.
+     */
+    private void deleteQuietly(String storageKey) {
+        if (storageKey == null) {
+            return;
+        }
+        try {
+            profileImageStorage.delete(storageKey);
+        } catch (ImageStorageException ignored) {
+            // deliberately ignored - see the javadoc above
+        }
+    }
+
     /**
      * Signs a new access JWT and mints a new refresh token for this user.
      *
@@ -313,8 +414,18 @@ public class AuthService {
                 user.getRole(),
                 user.isVerified(),   // Lombok's getter for a boolean field is "is..." not "get..."
                 user.getCreatedAt(),
-                user.getBio()
+                user.getBio(),
+                avatarUrl(user)
         );
+    }
+
+    /**
+     * The avatar's URL is DERIVED, never stored: if the user set one, it is always served from this
+     * endpoint. Frontends can render {@code <img src={avatarUrl}>} directly, or show a placeholder
+     * when it is {@code null}.
+     */
+    private static String avatarUrl(User user) {
+        return user.getAvatarStorageKey() == null ? null : "/api/v1/me/avatar";
     }
 
 }

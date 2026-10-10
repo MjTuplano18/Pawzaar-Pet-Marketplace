@@ -73,6 +73,17 @@ public class User {
     @Column(length = 500)
     private String bio;
 
+    // A user has exactly ONE avatar. We store the opaque storage key and the verified MIME type
+    // (needed to set Content-Type when serving the bytes). The key itself is NEVER serialized -
+    // the API only exposes a derived URL. NULL = no avatar yet.
+    @Setter
+    @Column(name = "avatar_storage_key", length = 255)
+    private String avatarStorageKey;
+
+    @Setter
+    @Column(name = "avatar_content_type", length = 50)
+    private String avatarContentType;
+
     // EnumType.STRING stores "USER"/"SELLER" instead of 0/1. Ordinals would corrupt data the
     // moment someone inserted a new constant in the middle of the enum.
     @Setter

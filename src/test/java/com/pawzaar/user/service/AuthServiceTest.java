@@ -1,6 +1,11 @@
 package com.pawzaar.user.service;
 
+import com.pawzaar.common.image.ImageStorage;
+import com.pawzaar.common.image.ImageValidator;
+import com.pawzaar.common.image.ServedImage;
+import com.pawzaar.common.image.ValidatedImage;
 import com.pawzaar.config.PasswordEncoderConfig;
+import com.pawzaar.user.AvatarNotFoundException;
 import com.pawzaar.user.InvalidCredentialsException;
 import com.pawzaar.user.InvalidRefreshTokenException;
 import com.pawzaar.user.RefreshToken;
@@ -23,12 +28,15 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -37,6 +45,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -60,6 +70,12 @@ class AuthServiceTest {
     @Mock
     private RefreshTokenRepository refreshTokenRepository;
 
+    @Mock
+    private ImageValidator imageValidator;
+
+    @Mock
+    private ImageStorage profileImageStorage;
+
     // The REAL production encoder bean (with the {bcrypt} prefix and the legacy fallback),
     // so these tests exercise the exact hashing configuration the app runs with.
     private final PasswordEncoder realEncoder = new PasswordEncoderConfig().passwordEncoder();
@@ -73,7 +89,9 @@ class AuthServiceTest {
                 jwtEncoder,
                 Duration.ofMinutes(30),
                 refreshTokenRepository,
-                Duration.ofDays(7));
+                Duration.ofDays(7),
+                imageValidator,
+                profileImageStorage);
     }
 
     private static User userWithHash(String hash) {
@@ -299,5 +317,92 @@ class AuthServiceTest {
 
         assertThrows(UserNotFoundException.class,
                 () -> authService.updateProfile(userId, new UpdateProfileRequest("Ana", "", null)));
+    }
+
+    // ── avatar (POST/GET/DELETE /api/v1/me/avatar) ────────────────────────────
+
+    @Test
+    void setAvatarStoresPersistsAndReturnsTheDerivedUrl() {
+        User user = userWithHash(realEncoder.encode("pawzaar123"));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(imageValidator.validate(any()))
+                .thenReturn(new ValidatedImage(new byte[]{1}, "png", "image/png"));
+        when(profileImageStorage.store(any(), eq("png"))).thenReturn("avatar-key-1");
+
+        UserResponse response = authService.setAvatar(user.getId(), anyPng());
+
+        assertEquals("/api/v1/me/avatar", response.avatarUrl());
+        assertEquals("avatar-key-1", user.getAvatarStorageKey());
+        verify(profileImageStorage).store(any(), eq("png"));
+        verify(profileImageStorage, never()).delete(any());   // no previous avatar to clean up
+    }
+
+    @Test
+    void setAvatarReplacesThePreviousAvatarAndDeletesItsFile() {
+        User user = userWithHash(realEncoder.encode("pawzaar123"));
+        user.setAvatarStorageKey("old-key");
+        user.setAvatarContentType("image/png");
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(imageValidator.validate(any()))
+                .thenReturn(new ValidatedImage(new byte[]{1}, "png", "image/png"));
+        when(profileImageStorage.store(any(), eq("png"))).thenReturn("new-key");
+
+        authService.setAvatar(user.getId(), anyPng());
+
+        assertEquals("new-key", user.getAvatarStorageKey());
+        verify(profileImageStorage).delete("old-key");   // replaced, so the old file must go
+    }
+
+    @Test
+    void removeAvatarClearsTheRowAndDeletesTheStoredFile() {
+        User user = userWithHash(realEncoder.encode("pawzaar123"));
+        user.setAvatarStorageKey("old-key");
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        authService.removeAvatar(user.getId());
+
+        assertNull(user.getAvatarStorageKey());
+        assertNull(user.getAvatarContentType());
+        verify(profileImageStorage).delete("old-key");
+    }
+
+    @Test
+    void removeAvatarWithoutOneIsStillASuccess() {
+        User user = userWithHash(realEncoder.encode("pawzaar123"));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        authService.removeAvatar(user.getId());   // must NOT throw -> DELETE stays 204
+
+        verify(profileImageStorage, never()).delete(any());
+    }
+
+    @Test
+    void getAvatarReturnsTheStoredBytesAndType() throws Exception {
+        User user = userWithHash(realEncoder.encode("pawzaar123"));
+        user.setAvatarStorageKey("key");
+        user.setAvatarContentType("image/png");
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(profileImageStorage.load("key")).thenReturn(new ByteArrayResource(new byte[]{1, 2, 3}));
+
+        ServedImage served = authService.getAvatar(user.getId());
+
+        assertEquals("image/png", served.contentType());
+        assertArrayEquals(new byte[]{1, 2, 3}, served.resource().getContentAsByteArray());
+    }
+
+    @Test
+    void getAvatarWithoutOneFailsWithAvatarNotFound() {
+        User user = userWithHash(realEncoder.encode("pawzaar123"));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        assertThrows(AvatarNotFoundException.class, () -> authService.getAvatar(user.getId()));
+    }
+
+    /** A tiny stand-in upload; the validator is mocked, so its bytes are never examined. */
+    private static MockMultipartFile anyPng() {
+        return new MockMultipartFile("file", "avatar.png", "image/png", new byte[]{1});
     }
 }

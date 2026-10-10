@@ -1,7 +1,9 @@
 package com.pawzaar.user.controller;
 
+import com.pawzaar.common.image.ServedImage;
 import com.pawzaar.config.JwtConfig;
 import com.pawzaar.config.SecurityConfig;
+import com.pawzaar.user.AvatarNotFoundException;
 import com.pawzaar.user.Role;
 import com.pawzaar.user.dto.UserResponse;
 import com.pawzaar.user.service.AuthService;
@@ -9,7 +11,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -17,11 +21,15 @@ import java.time.Instant;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -44,7 +52,8 @@ class ProfileControllerTest {
 
     private static UserResponse profile() {
         return new UserResponse(USER_ID, "ana@pawzaar.test", "Ana Reyes", "+639171234567",
-                Role.USER, true, Instant.parse("2026-10-01T00:00:00Z"), "Dog mom from Bulacan.");
+                Role.USER, true, Instant.parse("2026-10-01T00:00:00Z"),
+                "Dog mom from Bulacan.", "/api/v1/me/avatar");
     }
 
     @Test
@@ -59,6 +68,7 @@ class ProfileControllerTest {
                 .andExpect(jsonPath("$.displayName").value("Ana Reyes"))
                 .andExpect(jsonPath("$.phone").value("+639171234567"))
                 .andExpect(jsonPath("$.bio").value("Dog mom from Bulacan."))
+                .andExpect(jsonPath("$.avatarUrl").value("/api/v1/me/avatar"))
                 // The one field that must never be returned, even by accident.
                 .andExpect(jsonPath("$.passwordHash").doesNotExist());
     }
@@ -76,7 +86,7 @@ class ProfileControllerTest {
     @Test
     void updateEditsTheProfile() throws Exception {
         UserResponse updated = new UserResponse(USER_ID, "ana@pawzaar.test", "Ana Reyes Edit",
-                null, Role.USER, true, Instant.parse("2026-10-01T00:00:00Z"), "New bio");
+                null, Role.USER, true, Instant.parse("2026-10-01T00:00:00Z"), "New bio", null);
         when(authService.updateProfile(any(), any())).thenReturn(updated);
 
         mockMvc.perform(put("/api/v1/me")
@@ -111,5 +121,60 @@ class ProfileControllerTest {
                 .andExpect(jsonPath("$.title").value("Validation failed"));
 
         verifyNoInteractions(authService);
+    }
+
+    // ── avatar endpoints ───────────────────────────────────────────────────────
+
+    @Test
+    void uploadAvatarReturnsTheUpdatedProfile() throws Exception {
+        UserResponse updated = new UserResponse(USER_ID, "ana@pawzaar.test", "Ana Reyes", null,
+                Role.USER, true, Instant.parse("2026-10-01T00:00:00Z"), "New bio", "/api/v1/me/avatar");
+        when(authService.setAvatar(any(), any())).thenReturn(updated);
+
+        mockMvc.perform(multipart("/api/v1/me/avatar")
+                        .file(new MockMultipartFile("file", "avatar.png", "image/png", new byte[]{1}))
+                        .with(jwt().jwt(b -> b.subject(USER_ID.toString()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.avatarUrl").value("/api/v1/me/avatar"));
+    }
+
+    @Test
+    void uploadAvatarWithoutAFileIsRejectedWith400() throws Exception {
+        mockMvc.perform(multipart("/api/v1/me/avatar")
+                        .with(jwt().jwt(b -> b.subject(USER_ID.toString()))))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(authService);
+    }
+
+    @Test
+    void deleteAvatarReturns204() throws Exception {
+        mockMvc.perform(delete("/api/v1/me/avatar")
+                        .with(jwt().jwt(b -> b.subject(USER_ID.toString()))))
+                .andExpect(status().isNoContent());
+
+        verify(authService).removeAvatar(USER_ID);
+    }
+
+    @Test
+    void getAvatarServesTheStoredBytes() throws Exception {
+        when(authService.getAvatar(USER_ID))
+                .thenReturn(new ServedImage(new ByteArrayResource(new byte[]{1, 2, 3}), "image/png"));
+
+        mockMvc.perform(get("/api/v1/me/avatar")
+                        .with(jwt().jwt(b -> b.subject(USER_ID.toString()))))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("image/png"))
+                .andExpect(content().bytes(new byte[]{1, 2, 3}));
+    }
+
+    @Test
+    void getAvatarWithoutOneFailsWith404() throws Exception {
+        when(authService.getAvatar(USER_ID)).thenThrow(new AvatarNotFoundException(USER_ID));
+
+        mockMvc.perform(get("/api/v1/me/avatar")
+                        .with(jwt().jwt(b -> b.subject(USER_ID.toString()))))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.title").value("Avatar not found"));
     }
 }
