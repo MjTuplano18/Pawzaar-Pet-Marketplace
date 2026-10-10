@@ -214,9 +214,9 @@ if (-not $SkipLive -and $testsOk) {
                 if ($r.Status -eq 201 -and $pet.id) { Pass 'USER may create a listing -> 201' } else { Fail "create -> $($r.Status): $($r.Body)" }
 
                 $r = Req 'Put' "$Base/api/v1/pets/$($pet.id)" $tokens.accessToken $update
-                if ($r.Status -eq 403 -and $r.Body -match '"title"\s*:\s*"Access denied"') {
-                    Pass 'USER token cannot update yet -> 403 ProblemDetail body'
-                } else { Fail "stale-role update -> $($r.Status): $($r.Body)" }
+                if ($r.Status -eq 200) {
+                    Pass 'fresh USER (owner) token may update its own listing -> 200 (H1)'
+                } else { Fail "owner update with USER token -> $($r.Status): $($r.Body)" }
 
                 $r = Req 'Post' "$Base/api/v1/auth/refresh" $null @{ refreshToken = $tokens.refreshToken }
                 $refreshed = $r.Body | ConvertFrom-Json

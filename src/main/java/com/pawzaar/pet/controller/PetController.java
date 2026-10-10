@@ -171,9 +171,14 @@ public class PetController {
      * Full replacement of a listing's mutable fields.
      * Returns 200 with the updated listing. Returns 403 if the caller is not the owner,
      * 404 if the listing does not exist.
+     *
+     * <p>H1: any AUTHENTICATED user may reach this endpoint - ownership is enforced by
+     * {@code PetService.checkOwnership}. Requiring {@code hasRole('SELLER')} here would 403 a
+     * brand-new seller, whose token still says USER until it expires, on their own listing
+     * (the role is promoted in the DB at create time, but the JWT is stale for up to 30 min).
      */
     @PutMapping("/pets/{id}")
-    @PreAuthorize("hasRole('SELLER')")
+    @PreAuthorize("hasAnyRole('USER', 'SELLER')")
     public PetResponse updatePet(
             @PathVariable UUID id,
             @Valid @RequestBody PetUpdateRequest request,
@@ -186,9 +191,10 @@ public class PetController {
     /**
      * Soft-deletes a listing (sets status to HIDDEN).
      * Returns 204 No Content on success, 403 if not the owner, 404 if not found.
+     * (Same H1 reasoning as updatePet: the owner is gated by ownership, not a role claim.)
      */
     @DeleteMapping("/pets/{id}")
-    @PreAuthorize("hasRole('SELLER')")
+    @PreAuthorize("hasAnyRole('USER', 'SELLER')")
     public ResponseEntity<Void> deletePet(
             @PathVariable UUID id,
             @AuthenticationPrincipal Jwt jwt) {

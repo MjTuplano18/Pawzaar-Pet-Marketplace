@@ -59,7 +59,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <ul>
  *   <li>Public GET endpoints are accessible without a token</li>
  *   <li>POST/PUT/DELETE require authentication (401 when anonymous)</li>
- *   <li>Role-based access (@PreAuthorize): USER may create, but only SELLER may update/delete</li>
+ *   <li>Role-based access (@PreAuthorize): USER may create, and any authenticated owner may
+ *       update/delete (H1 - ownership, not the stale role claim, gates writes)</li>
  *   <li>Ownership check: a different user's token gets 403</li>
  *   <li>Input validation: missing required fields get 400</li>
  *   <li>Framework errors keep the ProblemDetail shape (bad UUID -> 400, malformed JSON -> 400)</li>
@@ -352,33 +353,34 @@ class PetControllerTest {
     }
 
     @Test
-    void updateByNonSellerYields403ProblemDetail() throws Exception {
-        // A USER token passes authentication but fails hasRole('SELLER').
+    void updateByFreshSellerTokenThatOwnsTheListingYields200() throws Exception {
+        // H1: after createPet the DB role is SELLER, but the SAME token still carries "USER"
+        // until it expires (up to 30 min). A gateway check on hasRole('SELLER') would 403 the
+        // owner on their own listing. Ownership - not the stale role claim - is the gate.
         PetUpdateRequest req = new PetUpdateRequest(
                 "Updated title", "Golden Retriever", 4,
                 new BigDecimal("16000.00"), "Updated desc",
                 "Meycauayan", "Bulacan", "MALE", PetStatus.ACTIVE);
+        when(petService.updatePet(eq(PET_ID), eq(OWNER_ID), any()))
+                .thenReturn(fakeResponse());
 
         mockMvc.perform(put("/api/v1/pets/{id}", PET_ID)
                         .with(jwtFor(OWNER_ID, "USER"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isForbidden())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.title").value("Access denied"));
+                .andExpect(status().isOk());
 
-        org.mockito.Mockito.verifyNoInteractions(petService);
+        verify(petService).updatePet(eq(PET_ID), eq(OWNER_ID), any());
     }
 
     @Test
-    void deleteByNonSellerYields403() throws Exception {
+    void deleteByFreshSellerTokenThatOwnsTheListingYields204() throws Exception {
+        // H1: same story as update - the USER-role token still owns the listing.
         mockMvc.perform(delete("/api/v1/pets/{id}", PET_ID)
                         .with(jwtFor(OWNER_ID, "USER")))
-                .andExpect(status().isForbidden())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.title").value("Access denied"));
+                .andExpect(status().isNoContent());
 
-        org.mockito.Mockito.verifyNoInteractions(petService);
+        verify(petService).deletePet(PET_ID, OWNER_ID);
     }
 
     // ── ownership check ────────────────────────────────────────────────────────
