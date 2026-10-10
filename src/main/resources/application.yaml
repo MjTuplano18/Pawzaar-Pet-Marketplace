@@ -1,6 +1,19 @@
+# ── HTTP server ───────────────────────────────────────────────────────────────
+server:
+  # D3: graceful shutdown. On SIGTERM Tomcat stops accepting new connections and lets in-flight
+  # requests finish (up to spring.lifecycle.timeout-per-shutdown-phase) before the JVM exits.
+  # This only helps because the Dockerfile ENTRYPOINT uses the exec form, so the JVM is PID 1 and
+  # receives the signal directly.
+  shutdown: graceful
+
 spring:
   application:
     name: pawzaar-api
+
+  # D3: how long to wait for in-flight requests to drain during a graceful shutdown before
+  # forcing the process down. Slightly larger than the slowest realistic request.
+  lifecycle:
+    timeout-per-shutdown-phase: ${SHUTDOWN_TIMEOUT:30s}
 
   # Upload limits enforced by the servlet container BEFORE our code runs, so an oversized body is
   # rejected cheaply. ImageValidator applies the same limit again as defence in depth.
