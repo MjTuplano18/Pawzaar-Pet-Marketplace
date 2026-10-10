@@ -32,11 +32,18 @@ pawzaar:
       # Comma-separated list of browser origins allowed to call this API. NEVER use "*" in
       # production. Override with the CORS_ALLOWED_ORIGINS env var on the host.
       allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
-  # Where uploaded pet images live. Local disk for this project; the ImageStorage interface lets a
-  # cloud/CDN implementation drop in later without touching the service or controller.
+  # Where uploaded images live. `local` writes to disk (the default - no cloud account needed to run
+  # or test); `supabase` uploads to a Supabase Storage bucket. The ImageStorage interface lets this
+  # change without touching the service or controller.
   storage:
-    root: ${PAWZAAR_STORAGE_ROOT:uploads}
+    type: ${PAWZAAR_STORAGE_TYPE:local}                  # local | supabase
+    root: ${PAWZAAR_STORAGE_ROOT:uploads}                # used only when type=local
     max-image-bytes: ${PAWZAAR_MAX_IMAGE_BYTES:5242880}   # 5 MiB
+    supabase:
+      # Used only when type=supabase. All three are secrets/config; set them on the host, never commit.
+      url: ${SUPABASE_URL:}                              # https://<project-ref>.supabase.co
+      bucket: ${SUPABASE_BUCKET:pawzaar-images}
+      service-key: ${SUPABASE_SERVICE_KEY:}              # service-role key; server-side only
   # Brute-force guard for the unauthenticated auth endpoints (register/login/refresh/logout).
   # A per-client-IP token bucket; see com.pawzaar.common.ratelimit.
   rate-limit:

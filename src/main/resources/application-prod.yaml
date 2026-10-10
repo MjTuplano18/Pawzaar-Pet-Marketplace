@@ -29,3 +29,11 @@ pawzaar:
       # There is intentionally NO fallback: forgetting this should fail loudly, not silently
       # allow the wrong origin or none at all.
       allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  storage:
+    # Production stores images in Supabase Storage. No fallbacks: if these are unset the app
+    # refuses to start rather than accept uploads it cannot persist.
+    type: ${PAWZAAR_STORAGE_TYPE:supabase}
+    supabase:
+      url: ${SUPABASE_URL}
+      bucket: ${SUPABASE_BUCKET}
+      service-key: ${SUPABASE_SERVICE_KEY}
