@@ -14,6 +14,7 @@ import com.pawzaar.common.image.UnsupportedImageTypeException;// bad image type 
 import com.pawzaar.user.EmailAlreadyRegisteredException;   // "email already taken"     -> 409
 import com.pawzaar.user.InvalidCredentialsException;       // "login failed"            -> 401
 import com.pawzaar.user.InvalidRefreshTokenException;      // "refresh token bad"       -> 401
+import com.pawzaar.user.UserNotFoundException;             // "user no longer exists"   -> 404
 
 // === Spring's HTTP layer ===
 import org.springframework.dao.OptimisticLockingFailureException;  // @Version race        -> 409
@@ -191,6 +192,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(HttpHeaders.RETRY_AFTER, Long.toString(seconds))
                 .body(problem);
+    }
+
+    // 404: the user behind a valid JWT no longer exists (account deleted after the token was issued).
+    @ExceptionHandler(UserNotFoundException.class)
+    public ProblemDetail handleUserNotFound(UserNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,          // 404
+                ex.getMessage());              // "No user exists with id ..."
+        problem.setTitle("User not found");
+        problem.setProperty("userId", ex.getUserId());
+        return problem;
     }
 
     // ── Image upload errors ─────────────────────────────────────────────────────────────────

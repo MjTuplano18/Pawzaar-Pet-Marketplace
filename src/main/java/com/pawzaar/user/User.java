@@ -68,6 +68,11 @@ public class User {
     @Column(length = 30)
     private String phone;
 
+    // Same idea as phone: a short optional "about me" text. NULL until the user writes one.
+    @Setter
+    @Column(length = 500)
+    private String bio;
+
     // EnumType.STRING stores "USER"/"SELLER" instead of 0/1. Ordinals would corrupt data the
     // moment someone inserted a new constant in the middle of the enum.
     @Setter

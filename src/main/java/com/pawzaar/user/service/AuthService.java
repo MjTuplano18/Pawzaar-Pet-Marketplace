@@ -5,9 +5,11 @@ import com.pawzaar.user.InvalidCredentialsException;
 import com.pawzaar.user.InvalidRefreshTokenException;
 import com.pawzaar.user.RefreshToken;
 import com.pawzaar.user.User;
+import com.pawzaar.user.UserNotFoundException;
 import com.pawzaar.user.dto.LoginRequest;
 import com.pawzaar.user.dto.RegisterRequest;
 import com.pawzaar.user.dto.TokenResponse;
+import com.pawzaar.user.dto.UpdateProfileRequest;
 import com.pawzaar.user.dto.UserResponse;
 import com.pawzaar.user.repository.RefreshTokenRepository;
 import com.pawzaar.user.repository.UserRepository;
@@ -29,6 +31,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Locale;
+import java.util.UUID;
 
 /**
  * Business layer for the "auth" feature - the ONLY class allowed to talk to UserRepository.
@@ -193,6 +196,51 @@ public class AuthService {
                 .ifPresent(RefreshToken::revoke);
     }
 
+    // ── profile (GET/PUT /api/v1/me) ──────────────────────────────────────────
+
+    /**
+     * Returns the authenticated user's own profile. readOnly = true because this only reads.
+     *
+     * <p>The caller hands over the user id from the JWT's {@code sub} claim - the id is verified
+     * by the token signature, so it is trustworthy with no body or header to spoof.
+     */
+    @Transactional(readOnly = true)
+    public UserResponse getProfile(UUID userId) {
+        return toResponse(findUser(userId));
+    }
+
+    /**
+     * Replaces the authenticated user's editable profile fields: display name, phone, bio.
+     *
+     * <p>Everything NOT in {@link UpdateProfileRequest} stays untouched - email, role, verified
+     * flag and the password hash have no setter for exactly this reason: a profile update can
+     * never accidentally reassign an account.
+     *
+     * <p>{@code null} or {@code ""} for phone/bio means "clear this field"; {@code ""} phone is
+     * also what validation accepts, so a client can remove a phone number by sending an empty one.
+     */
+    @Transactional
+    public UserResponse updateProfile(UUID userId, UpdateProfileRequest request) {
+        User user = findUser(userId);
+        user.setDisplayName(request.displayName().trim());
+        user.setPhone(blankToNull(request.phone()));
+        user.setBio(blankToNull(request.bio()));
+        // save() on an entity that already has an id = UPDATE. It also returns the entity, so we
+        // build the response from the freshly-saved instance.
+        return toResponse(userRepository.save(user));
+    }
+
+    private User findUser(UUID userId) {
+        return userRepository.findById(userId)
+                // A token can outlive its account (user deleted). 404 beats a NullPointerException.
+                .orElseThrow(() -> new UserNotFoundException(userId));
+    }
+
+    /** A shared helper: null AND blank both mean "no value" for the optional profile fields. */
+    private static String blankToNull(String value) {
+        return (value == null || value.isBlank()) ? null : value.trim();
+    }
+
     /**
      * Signs a new access JWT and mints a new refresh token for this user.
      *
@@ -264,7 +312,8 @@ public class AuthService {
                 user.getPhone(),
                 user.getRole(),
                 user.isVerified(),   // Lombok's getter for a boolean field is "is..." not "get..."
-                user.getCreatedAt()
+                user.getCreatedAt(),
+                user.getBio()
         );
     }
 

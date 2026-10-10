@@ -4,9 +4,13 @@ import com.pawzaar.config.PasswordEncoderConfig;
 import com.pawzaar.user.InvalidCredentialsException;
 import com.pawzaar.user.InvalidRefreshTokenException;
 import com.pawzaar.user.RefreshToken;
+import com.pawzaar.user.Role;
 import com.pawzaar.user.User;
+import com.pawzaar.user.UserNotFoundException;
 import com.pawzaar.user.dto.LoginRequest;
 import com.pawzaar.user.dto.TokenResponse;
+import com.pawzaar.user.dto.UpdateProfileRequest;
+import com.pawzaar.user.dto.UserResponse;
 import com.pawzaar.user.repository.RefreshTokenRepository;
 import com.pawzaar.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +32,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -237,5 +242,62 @@ class AuthServiceTest {
 
         // Must NOT throw: logging out twice, or with a stale token, is still a success.
         authService.logout("never-issued");
+    }
+
+    // ── profile (GET/PUT /api/v1/me) ───────────────────────────────────────────
+
+    @Test
+    void getProfileReturnsTheUsersProfile() {
+        User user = userWithHash(realEncoder.encode("pawzaar123"));
+        user.setPhone("+639171234567");
+        user.setBio("Dog mom from Bulacan.");
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        UserResponse response = authService.getProfile(user.getId());
+
+        assertEquals(user.getId(), response.id());
+        assertEquals(EMAIL, response.email());
+        assertEquals("Ana Reyes", response.displayName());
+        assertEquals("+639171234567", response.phone());
+        assertEquals("Dog mom from Bulacan.", response.bio());
+    }
+
+    @Test
+    void getProfileOfAMissingUserFailsWithUserNotFound() {
+        UUID userId = UUID.randomUUID();
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+        assertThrows(UserNotFoundException.class, () -> authService.getProfile(userId));
+    }
+
+    @Test
+    void updateProfileEditsOnlyTheEditableFields() {
+        User user = userWithHash(realEncoder.encode("original-password"));
+        user.setPhone("+639171234567");
+        setField(user, "createdAt", Instant.parse("2026-10-01T00:00:00Z"));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UserResponse response = authService.updateProfile(user.getId(),
+                new UpdateProfileRequest("  Ana Reyes Edit  ", "", "  New bio  "));
+
+        // Editable fields replaced (trimmed); empty phone CLEARED to null.
+        assertEquals("Ana Reyes Edit", response.displayName());
+        assertNull(response.phone());
+        assertEquals("New bio", response.bio());
+        // Identity and credentials are frozen: email, role untouched, hash never touched.
+        assertEquals(EMAIL, response.email());
+        assertEquals(Role.USER, response.role());
+        // The change was persisted (save = UPDATE for an entity that already has an id).
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void updateProfileOfAMissingUserFailsWithUserNotFound() {
+        UUID userId = UUID.randomUUID();
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+        assertThrows(UserNotFoundException.class,
+                () -> authService.updateProfile(userId, new UpdateProfileRequest("Ana", "", null)));
     }
 }
