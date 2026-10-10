@@ -11,6 +11,9 @@ import java.time.Duration;
 @ConfigurationProperties(prefix = "pawzaar.email")
 public class EmailProperties {
 
+    /** How messages are delivered. See {@link Transport}; defaults to {@code LOG}. */
+    private Transport transport = Transport.LOG;
+
     /** The "From" address shown to recipients. */
     private String from = "no-reply@pawzaar.local";
 
@@ -28,6 +31,14 @@ public class EmailProperties {
      * verification link (and therefore its token), so this is a development-only convenience.
      */
     private boolean logBody = false;
+
+    public Transport getTransport() {
+        return transport;
+    }
+
+    public void setTransport(Transport transport) {
+        this.transport = transport;
+    }
 
     public String getFrom() {
         return from;
@@ -67,5 +78,13 @@ public class EmailProperties {
 
     public void setLogBody(boolean logBody) {
         this.logBody = logBody;
+    }
+
+    /** Delivery mechanism for outbound email (M4d-2). */
+    public enum Transport {
+        /** Write the message to the application log. Dev/test default; needs no mail account. */
+        LOG,
+        /** Deliver over SMTP via the auto-configured {@code JavaMailSender}. */
+        SMTP
     }
 }

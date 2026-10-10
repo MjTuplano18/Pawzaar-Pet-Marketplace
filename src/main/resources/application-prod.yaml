@@ -51,6 +51,13 @@ pawzaar:
       document-bucket: ${SUPABASE_DOCUMENT_BUCKET}
       service-key: ${SUPABASE_SERVICE_KEY}
   email:
+    # M4d-2: production delivers real mail. Set on the host (standard Spring Boot keys):
+    #   SPRING_MAIL_HOST, SPRING_MAIL_PORT=587, SPRING_MAIL_USERNAME, SPRING_MAIL_PASSWORD,
+    #   SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH=true,
+    #   SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE=true
+    # Starting with transport=smtp but no SPRING_MAIL_HOST fails fast (see EmailConfig) so we never
+    # silently drop verification emails. Set PAWZAAR_EMAIL_TRANSPORT=log to opt out (dev/CI only).
+    transport: ${PAWZAAR_EMAIL_TRANSPORT:smtp}
     # M4d: the public front-end route the verification link must point at.
     verification-base-url: ${PAWZAAR_EMAIL_VERIFICATION_BASE_URL}
     # Never print message bodies in production - they carry live verification tokens.

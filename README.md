@@ -167,7 +167,11 @@ returns **429** `problem+json` with a `Retry-After` header.
 > SHA-256 hash, 24h TTL) and hands the link to an `EmailSender`. The default implementation is
 > `LoggingEmailSender`: it writes the message to the log instead of delivering it, so local dev and
 > tests need no mail account. Run with the `dev` profile (`pawzaar.email.log-body=true`) and copy the
-> `...?token=...` link from the console; in production, supply your own `EmailSender` bean and
+> `...?token=...` link from the console. For real delivery (M4d-2) set `pawzaar.email.transport=smtp`
+> and the standard `SPRING_MAIL_*` settings (`SPRING_MAIL_HOST`, `SPRING_MAIL_PORT`,
+> `SPRING_MAIL_USERNAME`, `SPRING_MAIL_PASSWORD`, `...MAIL_SMTP_AUTH=true`, `...MAIL_SMTP_STARTTLS_ENABLE=true`)
+> — Mailtrap, Gmail, SES and SendGrid all work. With `smtp` selected but no mail host the app fails
+> fast instead of silently dropping mail; a custom `EmailSender` bean still takes over and
 > `EmailConfig` backs off automatically. Bad, expired and already-used tokens all return **400**
 > `problem+json`; `/auth/verify-email` is rate limited and `/auth/verify-email/resend` requires a
 > bearer token.

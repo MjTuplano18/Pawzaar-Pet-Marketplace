@@ -217,14 +217,14 @@ com.pawzaar
 ├── common/                      cross-cutting code (not tied to one feature)
 │   ├── HealthController.java     liveness probe
 │   ├── GlobalExceptionHandler.java   the ONE place exceptions become HTTP responses
-│   ├── email/                    EmailSender + LoggingEmailSender (M4d)
+│   ├── email/                    EmailSender seam + Logging (dev) / SMTP (prod) senders (M4d)
 │   ├── image/                    storage (Local/Supabase) + validation + cleanup
 │   └── ratelimit/                per-IP token-bucket filter
 ├── config/                      framework wiring
 │   ├── SecurityConfig.java       who may access what
 │   ├── CorsConfig.java           which browser origins may call the API
 │   ├── JwtConfig.java            issue + verify tokens, token lifetimes
-│   ├── EmailConfig.java          the EmailSender bean (backs off if one exists)
+│   ├── EmailConfig.java          picks the EmailSender transport (backs off if one exists)
 │   ├── OpenApiConfig.java        OpenAPI metadata + the bearer security scheme
 │   └── PasswordEncoderConfig.java    how passwords are hashed
 └── pet/                         ── the "pet" feature ──
@@ -845,7 +845,7 @@ POST /auth/register
   → AuthService.save(user)                      verified = false
   → invalidateAllForUser(userId)                retire any older link
   → EmailVerificationToken.issue(sha256(raw))   store the HASH, single-use, 24h TTL (V12)
-  → EmailSender.send(email, link?token=raw)     default sender LOGS it (dev); prod swaps in SMTP
+  → EmailSender.send(email, link?token=raw)     LOG in dev; SMTP in prod (transport switch)
 
 POST /auth/verify-email { token }
   → consumeIfActive(sha256(token))              one conditional UPDATE: unused AND not expired
@@ -858,15 +858,21 @@ POST /auth/verify-email { token }
 | `EmailVerificationTokenRepository` | `consumeIfActive` (single-use) and `invalidateAllForUser` (resend supersedes) |
 | `common/email/EmailSender` | one-method seam between "send this" and "how it is delivered" |
 | `common/email/LoggingEmailSender` | the default bean: writes the message to the log instead of delivering it |
+| `common/email/SmtpEmailSender` | real delivery over SMTP via Spring's `JavaMailSender` (M4d-2) |
+| `config/EmailConfig` | selects the sender from `pawzaar.email.transport`; fails fast if `smtp` has no mail host |
 | `user/dto/VerifyEmailRequest` | the `{ "token": ... }` body; masks the token in `toString()` |
 
-**Why a pluggable sender instead of a real SMTP client?** The security-critical work — unguessable
-token, hash-at-rest, expiry, single-use, generic errors — is all server-side and needs no third
-party. Only *delivery* does, and that is a deployment concern, so it sits behind `EmailSender`. The
-default implementation logs the link (and only when `pawzaar.email.log-body=true`, on in `dev` and
-off everywhere else) so the flow is fully exercisable locally and in tests with no account to
-configure. A production deployment adds its own `EmailSender` bean; `EmailConfig` backs off via
-`@ConditionalOnMissingBean`, so nothing else changes.
+**Why a pluggable sender?** The security-critical work — unguessable token, hash-at-rest, expiry,
+single-use, generic errors — is all server-side and needs no third party. Only *delivery* needs an
+SMTP account, and that is a deployment concern, so it sits behind `EmailSender`. Two beans share the
+seam and `pawzaar.email.transport` chooses between them: `LoggingEmailSender` (the default) writes
+the link to the log, and only when `pawzaar.email.log-body=true` (on in `dev`, off everywhere else),
+so the flow is fully exercisable locally and in tests with no account to configure. `SmtpEmailSender`
+(M4d-2) delivers for real via the auto-configured `JavaMailSender`; the `prod` profile defaults the
+transport to `smtp`, so a production host sets the standard `SPRING_MAIL_*` variables (host, port,
+username, password, `STARTTLS`). Selecting `smtp` with no mail host fails fast rather than silently
+dropping verification mail. A further custom `EmailSender` bean still takes over, because
+`EmailConfig` backs off via `@ConditionalOnMissingBean`, so nothing else changes.
 
 **Nothing is gated on the flag (yet).** An unverified account can still browse, list and sell exactly
 as before; `verified` is informational in `UserResponse`. Gating (e.g. "verified sellers only") is a

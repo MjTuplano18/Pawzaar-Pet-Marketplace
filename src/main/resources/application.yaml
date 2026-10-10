@@ -31,6 +31,15 @@ spring:
       # every entity field maps to an existing table/column. Startup fails on mismatch.
       ddl-auto: validate
 
+  # M4d-2: SMTP delivery for real emails. Spring Boot auto-configures a JavaMailSender only when
+  # `host` is set, so these are inert until a deployment sets SPRING_MAIL_HOST (transport=smtp).
+  # Timeouts mirror H8: a stalled mail server must not tie up a request thread indefinitely.
+  mail:
+    properties:
+      mail.smtp.connectiontimeout: ${SPRING_MAIL_SMTP_CONNECTION_TIMEOUT:5000}
+      mail.smtp.timeout: ${SPRING_MAIL_SMTP_TIMEOUT:10000}
+      mail.smtp.writetimeout: ${SPRING_MAIL_SMTP_WRITE_TIMEOUT:10000}
+
 # ── Pawzaar's own settings ────────────────────────────────────────────────────
 pawzaar:
   jwt:
@@ -88,6 +97,10 @@ pawzaar:
   # com.pawzaar.common.email), so local dev and tests need no SMTP account; a deployment supplies
   # its own EmailSender bean to actually deliver mail.
   email:
+    # M4d-2: how outbound mail is delivered. `log` writes the message to the app log (dev/test, no
+    # account needed); `smtp` delivers for real through the auto-configured JavaMailSender - set
+    # SPRING_MAIL_HOST (and friends) to enable it. Selecting `smtp` without a mail host fails fast.
+    transport: ${PAWZAAR_EMAIL_TRANSPORT:log}
     from: ${PAWZAAR_EMAIL_FROM:no-reply@pawzaar.local}
     # How long an emailed verification link stays valid.
     verification-validity: ${PAWZAAR_EMAIL_VERIFICATION_VALIDITY:24h}

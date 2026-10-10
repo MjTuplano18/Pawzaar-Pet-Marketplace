@@ -19,7 +19,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * <p>This test boots the real context with the {@code prod} profile active, supplying the
  * environment placeholders the prod config demands (datasource, JWT secret, CORS origin). Storage
- * is forced to {@code local} for the test so no Supabase credentials are needed.
+ * is forced to {@code local} and email transport to {@code log} for the test so no Supabase or SMTP
+ * credentials are needed.
  */
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.MOCK,
@@ -31,7 +32,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 "CORS_ALLOWED_ORIGINS=http://localhost:5173",
                 "PAWZAAR_EMAIL_VERIFICATION_BASE_URL=https://app.pawzaar.test/verify-email",
                 "pawzaar.storage.type=local",
-                "pawzaar.storage.root=target/prod-test-uploads"
+                "pawzaar.storage.root=target/prod-test-uploads",
+                "pawzaar.email.transport=log"
         })
 @AutoConfigureMockMvc
 @ActiveProfiles("prod")

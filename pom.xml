@@ -74,6 +74,14 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
+		<!-- M4d-2: real email delivery. Provides JavaMailSender (Jakarta Mail) so the verification
+		     link can actually reach an inbox. Provider-agnostic - Mailtrap, Gmail, SES and SendGrid
+		     all work by pointing spring.mail.* at the right host. The sender is only built when
+		     pawzaar.email.transport=smtp, so tests and local dev keep the logging sender. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-mail</artifactId>
+		</dependency>
 		<!-- M8: Caffeine gives the rate limiter a HARD maximum size (memory guard). The previous
 		     hand-rolled map only evicted by idle-age, so a flood of distinct client IPs inside the
 		     TTL window could still grow it without bound. Version is managed by Boot. -->
