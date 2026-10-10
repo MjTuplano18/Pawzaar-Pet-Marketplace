@@ -1,4 +1,4 @@
-package com.pawzaar.pet.image;
+package com.pawzaar.common.image;
 
 /**
  * The upload exceeds the configured size limit. Maps to {@code 413 Payload Too Large} rather than a

@@ -6,11 +6,11 @@ import com.pawzaar.pet.ForbiddenPetAccessException;           // "not your listi
 import com.pawzaar.pet.InvalidPetStatusException;           // "admin-only status"       -> 400
 import com.pawzaar.pet.InvalidSortException;               // "bad sort field/order"    -> 400
 import com.pawzaar.pet.PetNotFoundException;               // "no pet with that id"     -> 404
-import com.pawzaar.pet.image.ImageStorageException;        // disk/storage failure      -> 500
-import com.pawzaar.pet.image.ImageTooLargeException;       // image over the size cap   -> 413
-import com.pawzaar.pet.image.InvalidImageException;        // empty/not a real image    -> 400
+import com.pawzaar.common.image.ImageStorageException;        // disk/storage failure      -> 500
+import com.pawzaar.common.image.ImageTooLargeException;       // image over the size cap   -> 413
+import com.pawzaar.common.image.InvalidImageException;        // empty/not a real image    -> 400
 import com.pawzaar.pet.image.PetImageNotFoundException;    // "no image with that id"   -> 404
-import com.pawzaar.pet.image.UnsupportedImageTypeException;// bad image type            -> 415
+import com.pawzaar.common.image.UnsupportedImageTypeException;// bad image type            -> 415
 import com.pawzaar.user.EmailAlreadyRegisteredException;   // "email already taken"     -> 409
 import com.pawzaar.user.InvalidCredentialsException;       // "login failed"            -> 401
 import com.pawzaar.user.InvalidRefreshTokenException;      // "refresh token bad"       -> 401

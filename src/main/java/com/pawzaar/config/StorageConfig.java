@@ -1,9 +1,9 @@
 package com.pawzaar.config;
 
-import com.pawzaar.pet.image.ImageStorage;
-import com.pawzaar.pet.image.ImageStorageProperties;
-import com.pawzaar.pet.image.ImageValidator;
-import com.pawzaar.pet.image.LocalImageStorage;
+import com.pawzaar.common.image.ImageStorage;
+import com.pawzaar.common.image.ImageStorageProperties;
+import com.pawzaar.common.image.ImageValidator;
+import com.pawzaar.common.image.LocalImageStorage;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

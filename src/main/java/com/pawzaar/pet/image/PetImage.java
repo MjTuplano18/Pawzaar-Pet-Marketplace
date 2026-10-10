@@ -1,5 +1,7 @@
 package com.pawzaar.pet.image;
 
+import com.pawzaar.common.image.ImageStorage;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;

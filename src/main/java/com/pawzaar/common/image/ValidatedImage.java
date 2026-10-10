@@ -1,4 +1,4 @@
-package com.pawzaar.pet.image;
+package com.pawzaar.common.image;
 
 /**
  * The outcome of validating an upload: the exact bytes to store, a safe extension, and the verified

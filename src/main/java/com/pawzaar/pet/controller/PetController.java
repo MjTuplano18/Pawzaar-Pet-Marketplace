@@ -9,7 +9,7 @@ import com.pawzaar.pet.dto.PetImageResponse;
 import com.pawzaar.pet.dto.PetResponse;
 import com.pawzaar.pet.dto.PetSummary;
 import com.pawzaar.pet.dto.PetUpdateRequest;
-import com.pawzaar.pet.image.ServedImage;
+import com.pawzaar.common.image.ServedImage;
 import com.pawzaar.pet.service.PetImageService;
 import com.pawzaar.pet.service.PetService;
 

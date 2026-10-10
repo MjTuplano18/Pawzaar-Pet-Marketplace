@@ -1,4 +1,4 @@
-package com.pawzaar.pet.image;
+package com.pawzaar.common.image;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

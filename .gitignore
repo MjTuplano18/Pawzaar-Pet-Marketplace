@@ -29,3 +29,6 @@ application-local.yml
 
 # application-prod.yaml is committed (it has no secrets, only ${ENV_VAR} references).
 # If you ever create a local override with real values, name it application-local.yaml.
+
+# Agent/tooling scratch output - local artifacts, never project source
+.agents/

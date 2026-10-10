@@ -1,4 +1,4 @@
-package com.pawzaar.pet.image;
+package com.pawzaar.common.image;
 
 /**
  * An infrastructure failure while reading or writing image bytes (disk full, no permission, ...).

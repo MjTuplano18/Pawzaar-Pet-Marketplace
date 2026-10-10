@@ -1,4 +1,4 @@
-package com.pawzaar.pet.image;
+package com.pawzaar.common.image;
 
 /**
  * The upload's content type is not on the allowlist (or the declared type disagrees with the actual

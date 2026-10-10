@@ -1,4 +1,4 @@
-package com.pawzaar.pet.image;
+package com.pawzaar.common.image;
 
 /**
  * The uploaded file is empty or is not a recognisable image. Maps to {@code 400 Bad Request}:
