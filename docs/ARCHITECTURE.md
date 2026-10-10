@@ -42,7 +42,7 @@ Currently implemented (the table tracks how far the build has come):
 | **Search & filtering** on `GET /pets` (optional filters + sort allowlist) | ✅ done (Step 10) |
 | Pet detail with a clean 404 (`GET /pets/{id}`) | ✅ done |
 | One consistent error format (RFC 9457) | ✅ done |
-| Automated tests (web slice + DB slice + unit) | ✅ 223 tests |
+| Automated tests (web slice + DB slice + unit) | ✅ 224 tests |
 | User registration with hashed passwords | ✅ done |
 | Login + JWT issuance, token verification on protected routes | ✅ done (Step 6.3) |
 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ done |
@@ -734,8 +734,14 @@ Two deliberate choices worth defending in an interview:
   it blindly lets an attacker mint a new bucket per request. Enable it only behind a proxy that
   overwrites the header.
 
-The bucket map is keyed by an attacker-influenced value (the IP), so it is bounded: once it exceeds
-`max-keys`, entries idle longer than `bucket-ttl` are evicted.
+The bucket store is keyed by an attacker-influenced value (the IP), so it must be bounded or it
+becomes a memory-exhaustion DoS. It lives in a **Caffeine** cache with both a **hard** `maximum-size`
+(`max-keys`, the real guarantee) and `expire-after-access` (`bucket-ttl`, idle reclamation). The hard
+cap matters: age-based eviction alone does *not* bind memory, because an attacker sending many
+*distinct* fresh keys inside the TTL window presents nothing stale to evict — exactly the case the
+`trackedKeysNeverExceedMaxKeysEvenWhenNoKeyIsEverStale` test pins down. (Bounding the cache does mean
+an evicted key gets a fresh bucket, so key-cycling can dodge per-key limiting; that is inherent to any
+keyed limiter and is why the cap exists — to trade a little strictness for bounded memory.)
 
 ```text
 POST /auth/login  →  RateLimitFilter.tryConsume(ip)  →  allowed?  → controller
@@ -1118,7 +1124,7 @@ Controller  →  returns PetResponse (DTO)     ← entities never reach here
 | `PetServiceTest` (plain Mockito) | nothing (no Spring) | ❌ repository is a mock | business rules: `ACTIVE`-only listing, ownership, admin-only status rejected, `USER`→`SELLER` promotion |
 | `AuthServiceTest` (plain Mockito, real BCrypt) | nothing | ❌ repositories are mocks | login rules (correct/wrong/unknown password, legacy hashes, normalization) **and** refresh rotation/revocation + idempotent logout |
 | `AuthControllerTest` (`@WebMvcTest`) | web layer | ❌ (service mocked) | login/refresh/logout are public, token JSON shape, 401 problem details, 400 validation |
-| `InMemoryRateLimiterTest` (plain JUnit, fake clock) | nothing | ❌ | token-bucket behaviour: burst, deny, refill over time, per-key isolation, stale-bucket eviction, config validation |
+| `InMemoryRateLimiterTest` (plain JUnit, fake clock) | nothing | ❌ | token-bucket behaviour: burst, deny, refill over time, per-key isolation, idle eviction, hard `max-keys` cap under a fresh-key flood, config validation |
 | `RateLimitFilterTest` (plain JUnit, mock servlet) | nothing | ❌ | only `POST` on configured paths is limited; a denial routes through the resolver and never reaches the chain |
 | `GlobalExceptionHandlerTest` (plain JUnit) | nothing | ❌ | `RateLimitExceededException` → `429` + `Retry-After` + `problem+json` title |
 | `ImageValidatorTest` (plain JUnit) | nothing | ❌ | size cap, type allowlist, and magic-byte sniffing (a renamed/lying `Content-Type` is rejected) |
@@ -1127,7 +1133,7 @@ Controller  →  returns PetResponse (DTO)     ← entities never reach here
 | `PetImageServiceTest` (plain Mockito) | nothing | ❌ | owner-only upload/delete, file cleanup when the row write fails, hiding a non-`ACTIVE` listing's images |
 | `PawzaarApiApplicationTests` (`@SpringBootTest`) | everything | ✅ | the whole context starts |
 
-Current total: **223 tests**, all green with `mvn test`.
+Current total: **224 tests**, all green with `mvn test`.
 
 ```bash
 .\mvnw.cmd test                                            # all tests

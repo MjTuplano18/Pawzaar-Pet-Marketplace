@@ -74,6 +74,13 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
+		<!-- M8: Caffeine gives the rate limiter a HARD maximum size (memory guard). The previous
+		     hand-rolled map only evicted by idle-age, so a flood of distinct client IPs inside the
+		     TTL window could still grow it without bound. Version is managed by Boot. -->
+		<dependency>
+			<groupId>com.github.ben-manes.caffeine</groupId>
+			<artifactId>caffeine</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>

@@ -27,10 +27,10 @@ public class RateLimitProperties {
     /** How often tokens refill (ISO-8601 or short form like {@code 1m}). */
     private Duration refillPeriod = Duration.ofMinutes(1);
 
-    /** A bucket untouched for this long may be evicted once the map grows too large. */
+    /** Idle buckets are reclaimed once a key has gone untouched for this long. */
     private Duration bucketTtl = Duration.ofMinutes(10);
 
-    /** Upper bound on tracked client keys, to cap memory. */
+    /** HARD upper bound on tracked client keys (Caffeine maximumSize) - the memory guard. */
     private int maxKeys = 10_000;
 
     /**

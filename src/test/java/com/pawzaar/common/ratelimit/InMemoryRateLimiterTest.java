@@ -94,6 +94,22 @@ class InMemoryRateLimiterTest {
     }
 
     @Test
+    void trackedKeysNeverExceedMaxKeysEvenWhenNoKeyIsEverStale() {
+        // M8: the TTL is a full day, so age-based eviction never fires during this test. Only the
+        // HARD size cap can bound the map. (The old hand-rolled map only evicted by age, so a flood
+        // of distinct fresh keys - exactly what an attacker sends - grew it without limit.)
+        InMemoryRateLimiter limiter = new InMemoryRateLimiter(1, 1, MINUTE,
+                Duration.ofDays(1), 100, now::get);
+
+        for (int i = 0; i < 10_000; i++) {
+            limiter.tryConsume("attacker-key-" + i);   // 10k distinct, all brand-new keys
+        }
+
+        assertTrue(limiter.trackedKeys() <= 100,
+                "tracked keys must stay within the cap, was " + limiter.trackedKeys());
+    }
+
+    @Test
     void rejectsZeroCapacityConfiguration() {
         assertThrowsForConfig(0, 1, MINUTE, "capacity");
     }

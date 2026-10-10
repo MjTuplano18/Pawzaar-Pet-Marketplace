@@ -42,7 +42,7 @@ stateless JWT auth with refresh-token rotation, role-based authorization, automa
 - **Observability & docs** — Actuator health probes (liveness/readiness), Swagger UI (dev/test only),
   and structured logging: every response carries an `X-Request-Id` header that is also stamped into the
   server logs, 5xx errors / storage failures / auth failures are logged (never passwords or tokens).
-- **Quality gates** — 223 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds and
+- **Quality gates** — 224 tests, a strict CORS allowlist, and a GitHub Actions pipeline that builds and
   tests every push; `.\verify-local.ps1` runs the same checks (plus a live smoke test) locally.
 
 ---

@@ -1,7 +1,9 @@
 package com.pawzaar.common.ratelimit;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+
 import java.time.Duration;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 
 /**
@@ -24,9 +26,17 @@ import java.util.function.LongSupplier;
  * behind a load balancer and each one counts separately. A shared counter (Redis) is the production
  * answer; for this single-instance portfolio project, in-memory is a deliberate, documented choice.
  *
- * <p>Memory safety: buckets are keyed by client IP, which an attacker controls, so the map could
- * grow forever. Once it exceeds {@code maxKeys}, entries untouched for {@code bucketTtl} are
- * evicted. That bounds memory without a background thread.
+ * <p><b>Memory safety (M8).</b> Buckets are keyed by client IP, which an attacker controls, so the
+ * map could otherwise grow forever. It is held in a Caffeine cache with a <b>hard</b>
+ * {@code maximumSize(maxKeys)} <i>and</i> {@code expireAfterAccess(bucketTtl)}: the size cap is the
+ * real guarantee (a flood of fresh keys is bounded immediately), and the TTL additionally reclaims
+ * keys that simply went quiet. Both run without a background thread — Caffeine maintains the cache
+ * on access/write.
+ *
+ * <p>One honest caveat: because the cache is bounded, a key whose bucket is evicted gets a fresh,
+ * full bucket next time. Cycling through many distinct keys can therefore sidestep per-key limiting
+ * (that is inherent to any keyed limiter), but it can no longer exhaust memory — which is exactly
+ * what the cap is for.
  */
 public class InMemoryRateLimiter {
 
@@ -37,11 +47,8 @@ public class InMemoryRateLimiter {
     private final int capacity;
     private final int refillTokens;
     private final Duration refillPeriod;
-    private final Duration bucketTtl;
-    private final int maxKeys;
     private final LongSupplier nanoClock;
-
-    private final ConcurrentHashMap<String, Bucket> buckets = new ConcurrentHashMap<>();
+    private final Cache<String, Bucket> buckets;
 
     public InMemoryRateLimiter(int capacity, int refillTokens, Duration refillPeriod,
                                Duration bucketTtl, int maxKeys) {
@@ -60,8 +67,8 @@ public class InMemoryRateLimiter {
         if (refillPeriod == null || refillPeriod.isZero() || refillPeriod.isNegative()) {
             throw new IllegalArgumentException("refillPeriod must be > 0");
         }
-        if (bucketTtl == null || bucketTtl.isNegative()) {
-            throw new IllegalArgumentException("bucketTtl must not be negative");
+        if (bucketTtl == null || bucketTtl.isZero() || bucketTtl.isNegative()) {
+            throw new IllegalArgumentException("bucketTtl must be > 0");
         }
         if (maxKeys <= 0) {
             throw new IllegalArgumentException("maxKeys must be > 0");
@@ -69,9 +76,13 @@ public class InMemoryRateLimiter {
         this.capacity = capacity;
         this.refillTokens = refillTokens;
         this.refillPeriod = refillPeriod;
-        this.bucketTtl = bucketTtl;
-        this.maxKeys = maxKeys;
         this.nanoClock = nanoClock;
+        this.buckets = Caffeine.newBuilder()
+                // The hard cap: however fast new keys arrive, the cache never holds more than this.
+                .maximumSize(maxKeys)
+                // Reclaim buckets for keys we have not seen for a while (idle cleanup).
+                .expireAfterAccess(bucketTtl)
+                .build();
     }
 
     /**
@@ -81,26 +92,16 @@ public class InMemoryRateLimiter {
      */
     public Decision tryConsume(String key) {
         long now = nanoClock.getAsLong();
-        evictStaleBuckets(now);
-        Bucket bucket = buckets.computeIfAbsent(key, k -> new Bucket(capacity, now));
+        // Caffeine's get(key, fn) is atomic: concurrent callers share one bucket. An expired or
+        // evicted entry is treated as absent, so the mapping function makes a fresh, full bucket.
+        Bucket bucket = buckets.get(key, k -> new Bucket(capacity, now));
         return bucket.tryConsume(now, capacity, refillTokens, refillPeriod.toNanos());
     }
 
     /** Number of tracked keys right now; handy for diagnostics and tests. */
     int trackedKeys() {
-        return buckets.size();
-    }
-
-    /**
-     * Once the map is over its limit, drop keys we have not seen for {@code bucketTtl}.
-     * Called on every request, but the size check keeps it cheap in the common case.
-     */
-    private void evictStaleBuckets(long nowNanos) {
-        if (buckets.size() <= maxKeys) {
-            return;
-        }
-        long ttlNanos = bucketTtl.toNanos();
-        buckets.entrySet().removeIf(entry -> nowNanos - entry.getValue().lastSeenNanos > ttlNanos);
+        buckets.cleanUp();                 // force pending eviction before we count
+        return (int) buckets.estimatedSize();
     }
 
     /**
@@ -111,18 +112,14 @@ public class InMemoryRateLimiter {
 
         private double tokens;
         private long lastRefillNanos;
-        private long lastSeenNanos;
 
         Bucket(int capacity, long nowNanos) {
             this.tokens = capacity;                 // start full: allow the first burst
             this.lastRefillNanos = nowNanos;
-            this.lastSeenNanos = nowNanos;
         }
 
         synchronized Decision tryConsume(long nowNanos, int capacity,
                                          int refillTokens, long refillPeriodNanos) {
-            lastSeenNanos = nowNanos;
-
             // Refill proportionally to elapsed time, never exceeding the capacity.
             long elapsed = nowNanos - lastRefillNanos;
             if (elapsed > 0) {
