@@ -9,8 +9,10 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
+import java.net.http.HttpClient;
 import java.util.Locale;
 
 /**
@@ -87,8 +89,27 @@ public class StorageConfig {
                 // The service-role key is the bearer token; 'apikey' is sent too for the Storage API.
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + config.getServiceKey())
                 .defaultHeader("apikey", config.getServiceKey())
+                // H8: never let a slow/unreachable Supabase block a request thread indefinitely.
+                .requestFactory(requestFactory(config))
                 .build();
         return new SupabaseImageStorage(client, bucket);
+    }
+
+    /**
+     * H8: a request factory with an explicit READ timeout, wrapping an HTTP client with an explicit
+     * CONNECT timeout. Package-private so a test can prove the configured values are applied.
+     */
+    static JdkClientHttpRequestFactory requestFactory(ImageStorageProperties.Supabase config) {
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(httpClient(config));
+        factory.setReadTimeout(config.getReadTimeout());
+        return factory;
+    }
+
+    /** The JDK client carrying the connect timeout; split out so a test can read its value back. */
+    static HttpClient httpClient(ImageStorageProperties.Supabase config) {
+        return HttpClient.newBuilder()
+                .connectTimeout(config.getConnectTimeout())
+                .build();
     }
 
     @Bean

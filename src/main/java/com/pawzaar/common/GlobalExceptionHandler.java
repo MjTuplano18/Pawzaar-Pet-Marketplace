@@ -6,7 +6,7 @@ import com.pawzaar.pet.ForbiddenPetAccessException;           // "not your listi
 import com.pawzaar.pet.InvalidPetStatusException;           // "admin-only status"       -> 400
 import com.pawzaar.pet.InvalidSortException;               // "bad sort field/order"    -> 400
 import com.pawzaar.pet.PetNotFoundException;               // "no pet with that id"     -> 404
-import com.pawzaar.common.image.ImageStorageException;        // disk/storage failure      -> 500
+import com.pawzaar.common.image.ImageStorageException;        // storage backend failure  -> 502
 import com.pawzaar.common.image.ImageTooLargeException;       // image over the size cap   -> 413
 import com.pawzaar.common.image.InvalidImageException;        // empty/not a real image    -> 400
 import com.pawzaar.pet.image.PetImageNotFoundException;    // "no image with that id"   -> 404
@@ -267,12 +267,13 @@ public class GlobalExceptionHandler {
         return problem;
     }
 
-    // 500: the storage layer failed (disk full, permissions...). Log nothing sensitive back to the
-    // client; the message is deliberately generic so infrastructure detail never leaks.
+    // 502 Bad Gateway: the storage backend failed (Supabase outage/expired key, disk error). That is
+    // an UPSTREAM problem, not a bug in this API, so it is a 502 rather than a 500 (H8). The message
+    // stays generic so no infrastructure detail leaks to the client.
     @ExceptionHandler(ImageStorageException.class)
     public ProblemDetail handleImageStorage(ImageStorageException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-                HttpStatus.INTERNAL_SERVER_ERROR,  // 500
+                HttpStatus.BAD_GATEWAY,  // 502
                 "The image could not be stored or read right now");
         problem.setTitle("Image storage error");
         return problem;

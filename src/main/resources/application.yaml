@@ -46,6 +46,9 @@ pawzaar:
       profile-bucket: ${SUPABASE_PROFILE_BUCKET:pawzaar-user-profile}  # user avatars
       document-bucket: ${SUPABASE_DOCUMENT_BUCKET:pawzaar-docs}        # vaccine cards, vet records
       service-key: ${SUPABASE_SERVICE_KEY:}              # service-role key; server-side only
+      # H8: fail fast instead of blocking a request thread when Supabase is slow or unreachable.
+      connect-timeout: ${SUPABASE_CONNECT_TIMEOUT:5s}
+      read-timeout: ${SUPABASE_READ_TIMEOUT:15s}
   # Brute-force guard for the unauthenticated auth endpoints (register/login/refresh/logout).
   # A per-client-IP token bucket; see com.pawzaar.common.ratelimit.
   rate-limit:

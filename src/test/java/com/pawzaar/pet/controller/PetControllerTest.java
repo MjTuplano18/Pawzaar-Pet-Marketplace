@@ -15,6 +15,7 @@ import com.pawzaar.pet.dto.PetResponse;
 import com.pawzaar.pet.dto.PetSummary;
 import com.pawzaar.pet.dto.PetUpdateRequest;
 import com.pawzaar.pet.image.PetImageNotFoundException;
+import com.pawzaar.common.image.ImageStorageException;
 import com.pawzaar.common.image.ServedImage;
 import com.pawzaar.common.image.UnsupportedImageTypeException;
 import com.pawzaar.pet.service.PetImageService;
@@ -597,6 +598,21 @@ class PetControllerTest {
                 .andExpect(status().isUnsupportedMediaType())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.title").value("Unsupported image type"));
+    }
+
+    @Test
+    void uploadImageWhenStorageIsDownYields502() throws Exception {
+        // H8: a storage outage is an upstream problem, not our bug - a 502, not a 500.
+        org.mockito.Mockito.doThrow(new ImageStorageException("supabase unreachable"))
+                .when(petImageService).upload(eq(PET_ID), eq(OWNER_ID), any());
+        MockMultipartFile file = new MockMultipartFile("file", "photo.png", "image/png", new byte[]{1});
+
+        mockMvc.perform(multipart("/api/v1/pets/{id}/images", PET_ID)
+                        .file(file)
+                        .with(jwtFor(OWNER_ID)))
+                .andExpect(status().isBadGateway())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Image storage error"));
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.pawzaar.common.image;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.nio.file.Path;
+import java.time.Duration;
 
 /**
  * Settings for image storage, bound from {@code pawzaar.storage.*} (overridable by environment
@@ -89,6 +90,15 @@ public class ImageStorageProperties {
         /** Service-role key used as the bearer token. Bypasses row-level security - server only. */
         private String serviceKey = "";
 
+        /**
+         * TCP connect timeout for every Storage call (H8). A hung connect must fail fast instead of
+         * pinning a request thread; the JDK client's default is effectively infinite.
+         */
+        private Duration connectTimeout = Duration.ofSeconds(5);
+
+        /** Read timeout for every Storage call (H8) - how long to wait for response bytes. */
+        private Duration readTimeout = Duration.ofSeconds(15);
+
         public String getUrl() {
             return url;
         }
@@ -127,6 +137,22 @@ public class ImageStorageProperties {
 
         public void setServiceKey(String serviceKey) {
             this.serviceKey = serviceKey;
+        }
+
+        public Duration getConnectTimeout() {
+            return connectTimeout;
+        }
+
+        public void setConnectTimeout(Duration connectTimeout) {
+            this.connectTimeout = connectTimeout;
+        }
+
+        public Duration getReadTimeout() {
+            return readTimeout;
+        }
+
+        public void setReadTimeout(Duration readTimeout) {
+            this.readTimeout = readTimeout;
         }
     }
 }

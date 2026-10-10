@@ -21,9 +21,10 @@ import java.util.UUID;
  * <ul>
  *   <li><b>Server-generated keys.</b> A random UUID plus a validated extension, exactly like
  *       {@link LocalImageStorage}. The bucket path can never contain {@code ..} or user input.</li>
- *   <li><b>Failures become {@link ImageStorageException}.</b> The controller layer already maps that
- *       to a 500, so a Supabase outage/expired key surfaces as a clean error, not a leaked stack
- *       trace or a half-written row.</li>
+ *   <li><b>Failures become {@link ImageStorageException}.</b> The controller layer maps that to a
+ *       502, so a Supabase outage/expired key surfaces as a clean error, not a leaked stack
+ *       trace or a half-written row. The client itself carries connect and read timeouts (H8) so a
+ *       hung Supabase cannot block a request thread forever.</li>
  * </ul>
  *
  * <p>The HTTP client (base URL + auth headers) is built in {@code StorageConfig} so this class stays
