@@ -42,7 +42,7 @@ Currently implemented (through Step 10):
 | **Search & filtering** on `GET /pets` (optional filters + sort allowlist) | ✅ done (Step 10) |
 | Pet detail with a clean 404 (`GET /pets/{id}`) | ✅ done |
 | One consistent error format (RFC 9457) | ✅ done |
-| Automated tests (web slice + DB slice + unit) | ✅ 194 tests |
+| Automated tests (web slice + DB slice + unit) | ✅ 199 tests |
 | User registration with hashed passwords | ✅ done |
 | Login + JWT issuance, token verification on protected routes | ✅ done (Step 6.3) |
 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ done |
@@ -727,7 +727,7 @@ POST /pets/{id}/images (multipart "file")
 | `ImageValidator` | size cap, declared-type allowlist, and **magic-byte sniffing** — the `Content-Type` header is client-supplied, so the bytes must agree with it |
 | `ImageStorage` / `LocalImageStorage` | writes to a configured root under a server-generated key; refuses any key that escapes the root |
 | `PetImageRepository` | ordered images for a detail page; one batch query for a page's covers (no N+1); id lookups scoped to the owning pet |
-| `PetImageService` | ownership; appends new images; deletes row + file; hides a non-`ACTIVE` listing's images from non-owners |
+| `PetImageService` | ownership; appends new images; deletes the row and (after commit) the file; hides a non-`ACTIVE` listing's images from non-owners |
 | `PetController` | upload (201 + `Location`), delete (204), and a public byte-streaming GET |
 
 Decisions worth defending in an interview:
@@ -737,7 +737,11 @@ Decisions worth defending in an interview:
 * **Never expose the storage key.** Clients get an opaque image `id` and an API URL, so storage can
   move to S3/CDN without a client change and cannot be probed for a filesystem path.
 * **Keep the two-sided write consistent.** If the row insert fails after the file is written, the file
-  is deleted immediately — otherwise it becomes an orphan the app can never reach.
+  is deleted immediately — otherwise it becomes an orphan the app can never reach. Conversely, a
+  *delete* removes the file only **after the transaction commits** (H5): the database is the source of
+  truth, so a rollback must leave the file in place rather than strand the listing on a broken image.
+  `StorageCleanup.afterCommit(...)` registers that deferred work with Spring's transaction
+  synchronization (and runs immediately when there is no transaction, e.g. in a unit test).
 * **Cover image = sort order 0.** Cards need exactly one image, so the list endpoint fetches
   `sort_order = 0` for the whole page in a single query.
 

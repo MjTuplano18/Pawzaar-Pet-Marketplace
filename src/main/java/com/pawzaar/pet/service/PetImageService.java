@@ -12,9 +12,12 @@ import com.pawzaar.pet.image.PetImage;
 import com.pawzaar.pet.image.PetImageNotFoundException;
 import com.pawzaar.pet.image.PetImageRepository;
 import com.pawzaar.common.image.ServedImage;
+import com.pawzaar.common.image.StorageCleanup;
 import com.pawzaar.common.image.ValidatedImage;
 import com.pawzaar.pet.repository.PetRepository;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +38,8 @@ import java.util.UUID;
  */
 @Service
 public class PetImageService {
+
+    private static final Logger log = LoggerFactory.getLogger(PetImageService.class);
 
     private final PetRepository petRepository;
     private final PetImageRepository petImageRepository;
@@ -83,6 +88,11 @@ public class PetImageService {
         ValidatedImage validated = imageValidator.validate(file);
         String storageKey = petImageStorage.store(validated.data(), validated.extension());
 
+        // H5: if this transaction rolls back (including a commit-time failure), the file just written
+        // must not linger. Registering the cleanup is more reliable than a try/catch, which only sees
+        // failures thrown inside the method body.
+        StorageCleanup.afterRollback(() -> deleteQuietly(storageKey));
+
         List<PetImage> existing = petImageRepository.findByPetIdOrderBySortOrderAsc(petId);
         int sortOrder = existing.isEmpty() ? 0 : existing.get(existing.size() - 1).getSortOrder() + 1;
         try {
@@ -95,8 +105,9 @@ public class PetImageService {
                     saved.getSortOrder());
         } catch (RuntimeException e) {
             // The database write failed: remove the file we just wrote so it does not become an
-            // orphan the app can never reach.
-            petImageStorage.delete(storageKey);
+            // orphan the app can never reach. (Also covered by afterRollback; delete is a no-op if
+            // the file is already gone.)
+            deleteQuietly(storageKey);
             throw e;
         }
     }
@@ -132,7 +143,11 @@ public class PetImageService {
             next++;
         }
 
-        petImageStorage.delete(image.getStorageKey());
+        // H5: the row delete only counts once the transaction COMMITS. Deleting the file here, inside
+        // the transaction, would break the listing if the transaction later rolls back - the row would
+        // survive but its bytes would be gone. Defer the irreversible file delete until after commit.
+        String storageKey = image.getStorageKey();
+        StorageCleanup.afterCommit(() -> deleteQuietly(storageKey));
     }
 
     /**
@@ -156,5 +171,21 @@ public class PetImageService {
 
     private Pet requirePet(UUID petId) {
         return petRepository.findById(petId).orElseThrow(() -> new PetNotFoundException(petId));
+    }
+
+    /**
+     * Best-effort storage deletion used by the post-commit/rollback cleanup (H5). A failure here is
+     * logged, not thrown: the database is the source of truth and the object it points at is already
+     * gone (or was never committed), so a leftover file is invisible rather than a request error.
+     */
+    private void deleteQuietly(String storageKey) {
+        if (storageKey == null) {
+            return;
+        }
+        try {
+            petImageStorage.delete(storageKey);
+        } catch (RuntimeException e) {
+            log.warn("Could not delete stored image '{}' during cleanup", storageKey, e);
+        }
     }
 }

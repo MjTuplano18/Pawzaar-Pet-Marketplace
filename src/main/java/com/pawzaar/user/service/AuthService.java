@@ -5,6 +5,7 @@ import com.pawzaar.common.image.ImageStorage;
 import com.pawzaar.common.image.ImageStorageException;
 import com.pawzaar.common.image.ImageValidator;
 import com.pawzaar.common.image.ServedImage;
+import com.pawzaar.common.image.StorageCleanup;
 import com.pawzaar.common.image.ValidatedImage;
 
 import com.pawzaar.user.AvatarNotFoundException;
@@ -290,8 +291,10 @@ public class AuthService {
      *
      * <p>Order matters, and mirrors {@code PetImageService}: store the new file FIRST, then persist
      * the new key; if the database write fails, the just-stored file is deleted so it cannot become
-     * an orphan. Only after the new avatar is safely saved is the OLD file removed. A failed cleanup
-     * of the old file is tolerated: a stale object nobody references anymore is harmless.
+     * an orphan. The OLD file is only removed after the row change has <b>committed</b> (H5) - doing
+     * it any earlier would leave the account pointing at a file that no longer exists if the
+     * transaction rolled back. A failed cleanup of the old file is tolerated: a stale object nobody
+     * references anymore is harmless.
      */
     @Transactional
     public UserResponse setAvatar(UUID userId, MultipartFile file) {
@@ -300,16 +303,21 @@ public class AuthService {
         ValidatedImage validated = imageValidator.validate(file);
         String newKey = profileImageStorage.store(validated.data(), validated.extension());
 
+        // H5: if this transaction rolls back (including a commit-time failure), the file just written
+        // must not linger.
+        StorageCleanup.afterRollback(() -> deleteQuietly(newKey));
+
         String oldKey = user.getAvatarStorageKey();
         try {
             user.setAvatarStorageKey(newKey);
             user.setAvatarContentType(validated.contentType());
             User saved = userRepository.save(user);
-            deleteQuietly(oldKey);   // replaces the previous avatar, so its file is now dead
+            // H5: the previous avatar's file is dead only once the row change COMMITS.
+            StorageCleanup.afterCommit(() -> deleteQuietly(oldKey));
             return toResponse(saved);
         } catch (RuntimeException e) {
             // The database write failed: remove the file we just wrote so it does not linger.
-            profileImageStorage.delete(newKey);
+            deleteQuietly(newKey);
             throw e;
         }
     }
@@ -317,6 +325,9 @@ public class AuthService {
     /**
      * Removes the avatar: clears the row's key/type and deletes the stored file. Idempotent, like
      * the other DELETE endpoints - removing an avatar the user never had is still a 204.
+     *
+     * <p>H5: the file is deleted only <b>after</b> the transaction commits, so a rollback leaves the
+     * row and its file consistent.
      */
     @Transactional
     public void removeAvatar(UUID userId) {
@@ -328,7 +339,7 @@ public class AuthService {
         user.setAvatarStorageKey(null);
         user.setAvatarContentType(null);
         userRepository.save(user);
-        deleteQuietly(key);
+        StorageCleanup.afterCommit(() -> deleteQuietly(key));
     }
 
     /**
