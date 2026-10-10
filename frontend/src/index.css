@@ -1,0 +1,345 @@
+:root {
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --text: #1f2933;
+  --muted: #6b7280;
+  --border: #e3e5e8;
+  --brand: #0f766e;
+  --brand-dark: #0b5a54;
+  --danger-bg: #fef2f2;
+  --danger-text: #b91c1c;
+  --success-bg: #ecfdf5;
+  --success-text: #047857;
+  --info-bg: #eff6ff;
+  --info-text: #1d4ed8;
+  --warn-bg: #fffbeb;
+  --warn-text: #b45309;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
+
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.55;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+a {
+  color: var(--brand);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+code {
+  background: #eef2f3;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.container {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* ── shell ─────────────────────────────────────────────────────────────── */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.site-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 60px;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--text);
+}
+.brand:hover {
+  text-decoration: none;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.nav a {
+  color: var(--muted);
+  font-weight: 500;
+}
+.nav a.active {
+  color: var(--brand);
+}
+.nav-cta {
+  background: var(--brand);
+  color: #fff !important;
+  padding: 7px 14px;
+  border-radius: var(--radius);
+}
+.nav-cta:hover {
+  background: var(--brand-dark);
+  text-decoration: none;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+}
+.link-button:hover {
+  color: var(--text);
+}
+
+main.container {
+  flex: 1;
+  padding-top: 40px;
+  padding-bottom: 60px;
+}
+
+.site-footer {
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 18px 0;
+  background: var(--surface);
+}
+
+/* ── hero ──────────────────────────────────────────────────────────────── */
+.hero {
+  max-width: 640px;
+  margin: 0 auto;
+  text-align: center;
+}
+.hero h1 {
+  font-size: 2.1rem;
+  margin-bottom: 0.4rem;
+}
+.lede {
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin: 24px 0;
+  flex-wrap: wrap;
+}
+.callout {
+  text-align: left;
+  background: var(--info-bg);
+  color: var(--info-text);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  font-size: 0.95rem;
+}
+
+/* ── buttons ───────────────────────────────────────────────────────────── */
+.button {
+  display: inline-block;
+  background: var(--brand);
+  color: #fff;
+  border: 1px solid var(--brand);
+  padding: 10px 18px;
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+.button:hover {
+  background: var(--brand-dark);
+  border-color: var(--brand-dark);
+  text-decoration: none;
+}
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.button-secondary {
+  background: #fff;
+  color: var(--text);
+  border-color: var(--border);
+}
+.button-secondary:hover {
+  background: #f3f4f6;
+  border-color: #cfd3d8;
+}
+.button-ghost {
+  background: transparent;
+  color: var(--muted);
+  border-color: transparent;
+}
+.button-ghost:hover {
+  background: #f3f4f6;
+  border-color: transparent;
+  color: var(--text);
+}
+.button-block {
+  width: 100%;
+  margin-top: 6px;
+}
+
+/* ── cards & forms ─────────────────────────────────────────────────────── */
+.auth-card {
+  max-width: 420px;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 28px;
+}
+.auth-card h1 {
+  font-size: 1.5rem;
+  margin: 0 0 4px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.field {
+  margin-bottom: 16px;
+}
+.field label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 6px;
+}
+.field input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  background: #fff;
+}
+.field input:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+  border-color: var(--brand);
+}
+.field input.has-error {
+  border-color: var(--danger-text);
+}
+.field-hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 5px 0 0;
+}
+.field-error {
+  color: var(--danger-text);
+  font-size: 0.8rem;
+  margin: 5px 0 0;
+}
+
+.auth-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+/* ── alerts ────────────────────────────────────────────────────────────── */
+.alert {
+  border-radius: var(--radius);
+  padding: 11px 14px;
+  font-size: 0.9rem;
+  margin-bottom: 16px;
+}
+.alert-error {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+.alert-success {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+.alert-info {
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+
+/* ── profile ───────────────────────────────────────────────────────────── */
+.profile {
+  max-width: 640px;
+  margin: 0 auto;
+}
+.profile-grid {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin: 20px 0;
+}
+.profile-grid dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+.profile-grid dd {
+  margin: 0;
+}
+.profile-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.badge-ok {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+.badge-warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.page-loading {
+  text-align: center;
+  color: var(--muted);
+  padding: 60px 0;
+}
