@@ -3,6 +3,17 @@
 # Set on your host (Render / Railway / Docker):
 #   DATABASE_URL, DATABASE_USERNAME, DATABASE_PASSWORD, JWT_SECRET
 
+server:
+  # H2: behind a TLS-terminating proxy (Render / Railway / a load balancer) every request
+  # arrives from the PROXY's IP, so "the client" would be one IP for all users - and one shared
+  # rate-limit bucket (20 requests/minute) that can lock everyone out of login at once.
+  # `native` asks Tomcat to apply X-Forwarded-For to the remote address, so the rate limiter
+  # keys on the real client IP. This is only safe because those platforms OVERWRITE the header
+  # before it reaches us; do not enable it on a host that passes the header through untouched.
+  # (Pawzaar's own trust-forwarded-for setting stays false - the container is the single place
+  # that may read the header.)
+  forward-headers-strategy: native
+
 spring:
   datasource:
     url: ${DATABASE_URL}

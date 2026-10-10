@@ -144,6 +144,15 @@ All routes are versioned under `/api/v1`.
 The `auth` endpoints are rate limited per client IP (default 20 requests/minute). Exceeding the limit
 returns **429** `problem+json` with a `Retry-After` header.
 
+> **Rate limiting behind a proxy (H2).** Behind Render / Railway / a load balancer, raw socket
+> connections come from the *proxy's* IP, so "per client IP" would silently become "per proxy" —
+> one shared 20/minute bucket that can lock out every user at once. The `prod` profile therefore
+> sets `server.forward-headers-strategy=native` so Tomcat applies `X-Forwarded-For` to the remote
+> address and the limiter keys on the real client. This is only safe because those platforms
+> **overwrite** the header before forwarding; if your host passes the header through untouched,
+> keep the env knob `RATE_LIMIT_TRUST_FORWARDED_FOR=false` (the default) and understand you are
+> globally rate-limited instead.
+
 List endpoints are paginated (`?page=0&size=20`) and the page size is hard-capped at **50**.
 
 `GET /pets` also accepts optional filters — `species=DOG` (exact), `province=Bulacan` and
