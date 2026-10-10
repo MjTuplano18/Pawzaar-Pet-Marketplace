@@ -92,7 +92,8 @@ The API starts on <http://localhost:8080>:
 - Health check: <http://localhost:8080/api/v1/health>
 - Swagger UI: <http://localhost:8080/swagger-ui.html>
 
-**Seed login:** `seed@pawzaar.test` / `pawzaar123`
+The `dev` profile seeds a sample seller and three listings automatically (see "Sample data" below);
+credentials for that throwaway account live only in the dev-only migration file, never in this README.
 
 ### 3. Run the tests
 

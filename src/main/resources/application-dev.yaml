@@ -10,6 +10,12 @@ spring:
     username: pawzaar
     password: pawzaar_dev
 
+  # C1: sample data lives in db/migration-dev and is applied ONLY on this profile.
+  # The default location (db/migration) stays clean, so the seed can never reach a
+  # production database. (V10 deletes the old V3/V5 seed; this location brings it back.)
+  flyway:
+    locations: classpath:db/migration,classpath:db/migration-dev
+
   # Show the SQL Hibernate sends to Postgres - invaluable for spotting N+1 queries.
   jpa:
     show-sql: true

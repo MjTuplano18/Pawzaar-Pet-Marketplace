@@ -4,6 +4,8 @@ import com.pawzaar.pet.Pet;
 import com.pawzaar.pet.PetStatus;
 import com.pawzaar.pet.Species;
 import com.pawzaar.pet.dto.PetFilter;
+import com.pawzaar.user.User;
+import com.pawzaar.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -22,12 +24,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Repository slice test: boots JPA + the real PostgreSQL in Docker,
- * but replaces nothing - it queries the ACTUAL seed data from V3.
+ * Repository slice test: boots JPA + the real PostgreSQL in Docker.
  *
- * replace = NONE is required because there is no in-memory H2 on the classpath;
- * instead we point at the Docker database. Each test runs in a transaction that is
- * rolled back afterwards, so the seed data is never polluted.
+ * <p>C1: these tests no longer depend on the old V3 seed rows (the seed now lives in a
+ * dev-only Flyway location that tests never apply). Every test creates its own fixtures
+ * inside the transaction, which is rolled back afterwards - so tests are isolated from
+ * each other AND from any leftover data in the shared database.
+ *
+ * <p>{@code replace = NONE} is required because there is no in-memory H2 on the classpath;
+ * instead we point at the Docker database.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -36,31 +41,60 @@ class PetRepositoryTest {
     @Autowired
     private PetRepository petRepository;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    // ── fixtures: every test builds its own seller + pets ─────────────────────────
+
+    /** A brand-new seller row; the email is unique per call so parallel runs never collide. */
+    private User seller() {
+        return userRepository.saveAndFlush(User.register(
+                "seller-" + UUID.randomUUID() + "@pawzaar.test",
+                "{bcrypt}dev-only-hash", "Fixture Seller"));
+    }
+
+    private Pet pet(User seller, String title, Species species, String breed,
+                    int ageMonths, int price, String city, String province) {
+        Pet pet = Pet.create(seller.getId(), title, species, breed, ageMonths,
+                BigDecimal.valueOf(price), null, city, province, null);
+        return petRepository.saveAndFlush(pet);
+    }
+
+    // ── plain repository queries ─────────────────────────────────────────────────
+
     @Test
-    void paginationCountsAllSeedPets() {
+    void paginationCountsAllPets() {
+        User seller = seller();
+        pet(seller, "A", Species.DOG, "Labrador", 3, 10000, "City A", "Province A");
+        pet(seller, "B", Species.DOG, "Labrador", 4, 11000, "City B", "Province A");
+        pet(seller, "C", Species.DOG, "Labrador", 5, 12000, "City C", "Province A");
+
         Page<Pet> page = petRepository.findAll(
                 PageRequest.of(0, 2, Sort.by(Sort.Direction.DESC, "createdAt")));
 
-        // V3 seeded exactly 3 pets: page 0 holds 2, total pages = ceil(3/2) = 2.
         assertEquals(3, page.getTotalElements());
         assertEquals(2, page.getContent().size());
         assertEquals(2, page.getTotalPages());
     }
 
     @Test
-    void findByIdWithRealSeedIdReturnsPet() {
-        Pet anyPet = petRepository.findAll(PageRequest.of(0, 1)).getContent().get(0);
+    void findByIdWithSavedIdReturnsPet() {
+        Pet saved = pet(seller(), "Fixture pup", Species.DOG, "Aspin", 5, 2500, "Cebu City", "Cebu");
 
-        var found = petRepository.findById(anyPet.getId());
+        var found = petRepository.findById(saved.getId());
 
         assertTrue(found.isPresent());
-        assertFalse(found.get().getTitle().isBlank());
-        assertNotNull(found.get().getSellerId());   // V3 links every pet to the seeded seller
+        assertEquals("Fixture pup", found.get().getTitle());
+        assertNotNull(found.get().getSellerId());
     }
 
     @Test
     void findByStatusReturnsOnlyActivePets() {
-        // V3 seeded 3 pets, all created with the table default status ACTIVE.
+        User seller = seller();
+        pet(seller, "A", Species.DOG, "Labrador", 3, 10000, "City A", "Province A");
+        pet(seller, "B", Species.DOG, "Labrador", 3, 10000, "City A", "Province A");
+        pet(seller, "C", Species.DOG, "Labrador", 3, 10000, "City A", "Province A");
+
         Page<Pet> active = petRepository.findByStatus(PetStatus.ACTIVE, PageRequest.of(0, 10));
 
         assertEquals(3, active.getTotalElements());
@@ -69,12 +103,12 @@ class PetRepositoryTest {
 
     @Test
     void findByIdAndStatusHidesPetsThatAreNotActive() {
-        Pet anyPet = petRepository.findAll(PageRequest.of(0, 1)).getContent().get(0);
+        Pet saved = pet(seller(), "Fixture pup", Species.DOG, "Aspin", 5, 2500, "Cebu City", "Cebu");
 
         // Same pet, wrong status -> treated as "does not exist" for public endpoints.
-        assertTrue(petRepository.findByIdAndStatus(anyPet.getId(), PetStatus.HIDDEN).isEmpty());
+        assertTrue(petRepository.findByIdAndStatus(saved.getId(), PetStatus.HIDDEN).isEmpty());
         // Right status -> found.
-        assertTrue(petRepository.findByIdAndStatus(anyPet.getId(), PetStatus.ACTIVE).isPresent());
+        assertTrue(petRepository.findByIdAndStatus(saved.getId(), PetStatus.ACTIVE).isPresent());
     }
 
     @Test
@@ -85,15 +119,16 @@ class PetRepositoryTest {
 
     @Test
     void findBySellerIdReturnsAllListingsForThatSeller() {
-        // All 3 seed pets belong to seller 11111111-1111-1111-1111-111111111111.
-        UUID seedSellerId = UUID.fromString("11111111-1111-1111-1111-111111111111");
+        User seller = seller();
+        pet(seller, "A", Species.DOG, "Labrador", 3, 10000, "City A", "Province A");
+        pet(seller, "B", Species.DOG, "Labrador", 4, 11000, "City B", "Province A");
+        pet(seller, "C", Species.DOG, "Labrador", 5, 12000, "City C", "Province A");
 
-        Page<Pet> myPets = petRepository.findBySellerId(
-                seedSellerId, PageRequest.of(0, 10));
+        Page<Pet> myPets = petRepository.findBySellerId(seller.getId(), PageRequest.of(0, 10));
 
         assertEquals(3, myPets.getTotalElements());
         assertTrue(myPets.getContent().stream()
-                .allMatch(p -> seedSellerId.equals(p.getSellerId())));
+                .allMatch(p -> seller.getId().equals(p.getSellerId())));
     }
 
     @Test
@@ -122,11 +157,21 @@ class PetRepositoryTest {
 
     @Test
     void specWithNoFiltersReturnsEveryActivePet() {
+        User seller = seller();
+        pet(seller, "A", Species.DOG, "Labrador", 3, 10000, "City A", "Province A");
+        pet(seller, "B", Species.DOG, "Labrador", 4, 11000, "City B", "Province A");
+        pet(seller, "C", Species.DOG, "Labrador", 5, 12000, "City C", "Province A");
+
         assertEquals(3, search(noFilters()).getTotalElements());
     }
 
     @Test
     void specFiltersBySpecies() {
+        User seller = seller();
+        pet(seller, "A", Species.DOG, "Labrador", 3, 10000, "City A", "Province A");
+        pet(seller, "B", Species.DOG, "Labrador", 4, 11000, "City B", "Province A");
+        pet(seller, "C", Species.CAT, "Persian", 2, 12000, "City C", "Province A");
+
         Page<Pet> dogs = search(new PetFilter(
                 Species.DOG, null, null, null, null, null, null, null));
 
@@ -136,6 +181,12 @@ class PetRepositoryTest {
 
     @Test
     void specFiltersByProvinceAndByCity() {
+        User seller = seller();
+        pet(seller, "Friendly Golden Retriever puppy", Species.DOG, "Golden Retriever",
+                3, 15000, "Meycauayan", "Bulacan");
+        pet(seller, "Shih Tzu, 1 year old", Species.DOG, "Shih Tzu",
+                12, 9000, "Quezon City", "Metro Manila");
+
         // Province filter.
         Page<Pet> inBulacan = search(new PetFilter(
                 null, "Bulacan", null, null, null, null, null, null));
@@ -152,6 +203,9 @@ class PetRepositoryTest {
     @Test
     void specBreedSearchIsCaseInsensitiveContains() {
         // Stored as "Golden Retriever"; a lowercase partial search must still match.
+        User seller = seller();
+        pet(seller, "A", Species.DOG, "Golden Retriever", 3, 15000, "Meycauayan", "Bulacan");
+
         Page<Pet> retriever = search(new PetFilter(
                 null, null, null, "retriever", null, null, null, null));
 
@@ -161,7 +215,12 @@ class PetRepositoryTest {
 
     @Test
     void specFiltersByPriceRange() {
-        // Seed prices: 15000 (Golden Retriever), 9000 (Shih Tzu), 12000 (Persian).
+        // Fixture prices: 15000 (Golden Retriever), 9000 (Shih Tzu), 12000 (Persian).
+        User seller = seller();
+        pet(seller, "GR", Species.DOG, "Golden Retriever", 3, 15000, "Meycauayan", "Bulacan");
+        pet(seller, "Shih", Species.DOG, "Shih Tzu", 12, 9000, "Quezon City", "Metro Manila");
+        pet(seller, "Persian", Species.CAT, "Persian", 2, 12000, "Angeles", "Pampanga");
+
         Page<Pet> midRange = search(new PetFilter(
                 null, null, null, null, new BigDecimal("10000"), new BigDecimal("14000"), null, null));
 
@@ -171,7 +230,12 @@ class PetRepositoryTest {
 
     @Test
     void specFiltersByAgeRange() {
-        // Seed ages: 3 (Golden Retriever), 12 (Shih Tzu), 2 (Persian). [2,3] matches two.
+        // Fixture ages: 3 (GR), 12 (Shih Tzu), 2 (Persian). [2,3] matches two.
+        User seller = seller();
+        pet(seller, "GR", Species.DOG, "Golden Retriever", 3, 15000, "Meycauayan", "Bulacan");
+        pet(seller, "Shih", Species.DOG, "Shih Tzu", 12, 9000, "Quezon City", "Metro Manila");
+        pet(seller, "Persian", Species.CAT, "Persian", 2, 12000, "Angeles", "Pampanga");
+
         Page<Pet> young = search(new PetFilter(
                 null, null, null, null, null, null, 2, 3));
 
@@ -181,6 +245,13 @@ class PetRepositoryTest {
     @Test
     void specCombinesFiltersWithAnd() {
         // DOG AND Metro Manila -> only the Shih Tzu (the Golden Retriever lives in Bulacan).
+        User seller = seller();
+        pet(seller, "Friendly Golden Retriever puppy", Species.DOG, "Golden Retriever",
+                3, 15000, "Meycauayan", "Bulacan");
+        pet(seller, "Shih Tzu, 1 year old", Species.DOG, "Shih Tzu",
+                12, 9000, "Quezon City", "Metro Manila");
+        pet(seller, "Persian kitten", Species.CAT, "Persian", 2, 12000, "Angeles", "Pampanga");
+
         Page<Pet> result = search(new PetFilter(
                 Species.DOG, "Metro Manila", null, null, null, null, null, null));
 
@@ -190,10 +261,9 @@ class PetRepositoryTest {
 
     @Test
     void specNeverReturnsNonActivePets() {
-        Pet persian = petRepository.findAll().stream()
-                .filter(p -> "Persian".equals(p.getBreed()))
-                .findFirst()
-                .orElseThrow();
+        User seller = seller();
+        Pet persian = pet(seller, "Persian kitten", Species.CAT, "Persian",
+                2, 12000, "Angeles", "Pampanga");
 
         persian.setStatus(PetStatus.HIDDEN);
         petRepository.saveAndFlush(persian);
@@ -207,11 +277,18 @@ class PetRepositoryTest {
 
     @Test
     void specResultsHonourThePageableSort() {
+        User seller = seller();
+        pet(seller, "GR", Species.DOG, "Golden Retriever", 3, 15000, "Meycauayan", "Bulacan");
+        pet(seller, "Persian", Species.CAT, "Persian", 2, 12000, "Angeles", "Pampanga");
+        pet(seller, "Shih", Species.DOG, "Shih Tzu", 12, 9000, "Quezon City", "Metro Manila");
+
         Page<Pet> byPriceAsc = petRepository.findAll(
                 PetSpecifications.activeMatching(noFilters()),
                 PageRequest.of(0, 50, Sort.by(Sort.Direction.ASC, "price")));
 
-        List<BigDecimal> prices = byPriceAsc.getContent().stream().map(Pet::getPrice).toList();
+        List<BigDecimal> prices = byPriceAsc.getContent().stream()
+                .map(p -> p.getPrice().setScale(2))   // normalize scale: pg may return 9000 vs 9000.00
+                .toList();
         assertEquals(
                 List.of(new BigDecimal("9000.00"), new BigDecimal("12000.00"), new BigDecimal("15000.00")),
                 prices);
