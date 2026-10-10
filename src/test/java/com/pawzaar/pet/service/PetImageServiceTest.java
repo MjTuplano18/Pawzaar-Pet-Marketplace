@@ -5,6 +5,8 @@ import com.pawzaar.pet.Pet;
 import com.pawzaar.pet.PetNotFoundException;
 import com.pawzaar.pet.PetStatus;
 import com.pawzaar.pet.Species;
+import com.pawzaar.common.QuotaExceededException;
+import com.pawzaar.common.limits.ListingLimitsProperties;
 import com.pawzaar.pet.dto.PetImageResponse;
 import com.pawzaar.common.image.ImageStorage;
 import com.pawzaar.common.image.ImageValidator;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mock.web.MockMultipartFile;
@@ -48,6 +51,9 @@ class PetImageServiceTest {
     @Mock private ImageStorage imageStorage;
     @Mock private ImageValidator imageValidator;
 
+    // Real defaults (H6); individual tests override the image cap when relevant.
+    @Spy private ListingLimitsProperties listingLimits = new ListingLimitsProperties();
+
     @InjectMocks private PetImageService petImageService;
 
     private static final UUID OWNER_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
@@ -74,6 +80,22 @@ class PetImageServiceTest {
         assertEquals(0, response.sortOrder());
         verify(imageStorage).store(any(), eq("png"));
         verify(petImageRepository).save(any(PetImage.class));
+    }
+
+    @Test
+    void uploadRejectsAListingThatIsAtTheImageLimit() {
+        // H6: cap reached - reject before validating or storing anything.
+        Pet pet = petOwnedBy(OWNER_ID, PetStatus.ACTIVE);
+        when(petRepository.findById(PET_ID)).thenReturn(Optional.of(pet));
+        when(listingLimits.getMaxImagesPerListing()).thenReturn(2);
+        when(petImageRepository.countByPetId(PET_ID)).thenReturn(2L);
+
+        assertThrows(QuotaExceededException.class,
+                () -> petImageService.upload(PET_ID, OWNER_ID, anyFile()));
+
+        verify(imageValidator, never()).validate(any());
+        verify(imageStorage, never()).store(any(), any());
+        verify(petImageRepository, never()).save(any(PetImage.class));
     }
 
     @Test

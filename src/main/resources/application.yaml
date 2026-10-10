@@ -27,6 +27,11 @@ pawzaar:
     access-token-validity-minutes: ${JWT_VALIDITY_MINUTES:30}
     # Refresh tokens outlive access tokens; 7 days is a common "stay signed in" window.
     refresh-token-validity-days: ${JWT_REFRESH_VALIDITY_DAYS:7}
+  # H6: per-account caps that stop a single seller filling the marketplace. Soft-deleted listings do
+  # not count against the limit, so deleting a listing frees a slot.
+  limits:
+    max-listings-per-user: ${PAWZAAR_MAX_LISTINGS_PER_USER:20}
+    max-images-per-listing: ${PAWZAAR_MAX_IMAGES_PER_LISTING:10}
   web:
     cors:
       # Comma-separated list of browser origins allowed to call this API. NEVER use "*" in

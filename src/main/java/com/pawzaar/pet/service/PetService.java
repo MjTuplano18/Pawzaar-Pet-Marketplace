@@ -1,6 +1,8 @@
 package com.pawzaar.pet.service;
 
 import com.pawzaar.common.PagedResponse;
+import com.pawzaar.common.QuotaExceededException;
+import com.pawzaar.common.limits.ListingLimitsProperties;
 import com.pawzaar.pet.ForbiddenPetAccessException;
 import com.pawzaar.pet.InvalidPetStatusException;
 import com.pawzaar.pet.Pet;
@@ -45,13 +47,16 @@ public class PetService {
     private final PetRepository petRepository;
     private final PetImageRepository petImageRepository;
     private final UserRepository userRepository;
+    private final ListingLimitsProperties limits;
 
     public PetService(PetRepository petRepository,
                       PetImageRepository petImageRepository,
-                      UserRepository userRepository) {
+                      UserRepository userRepository,
+                      ListingLimitsProperties limits) {
         this.petRepository = petRepository;
         this.petImageRepository = petImageRepository;
         this.userRepository = userRepository;
+        this.limits = limits;
     }
 
     // ── READ ─────────────────────────────────────────────────────────────────────────────────
@@ -85,6 +90,13 @@ public class PetService {
     /** Creates a new listing owned by {@code sellerId}. */
     @Transactional
     public PetResponse createPet(UUID sellerId, PetCreateRequest request) {
+        // H6: a per-account cap stops one seller from filling the marketplace. Soft-deleted
+        // (HIDDEN) listings do not count, so deleting a listing frees the slot.
+        long existing = petRepository.countBySellerIdAndStatusNot(sellerId, PetStatus.HIDDEN);
+        if (existing >= limits.getMaxListingsPerUser()) {
+            throw new QuotaExceededException("listings", limits.getMaxListingsPerUser());
+        }
+
         Pet pet = Pet.create(
                 sellerId,
                 request.title(),
@@ -97,6 +109,9 @@ public class PetService {
                 request.province(),
                 request.sex()
         );
+        // Moderation decision (H6): new listings go live immediately - status defaults to ACTIVE and
+        // there is no review queue. PENDING_REVIEW exists for a future admin workflow but is not set
+        // here. See the "Moderation" note in README.md.
         Pet saved = petRepository.save(pet);
 
         // A "seller" is simply a user who has posted a listing: posting your first pet promotes

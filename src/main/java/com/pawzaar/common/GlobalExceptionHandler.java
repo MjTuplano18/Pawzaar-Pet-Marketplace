@@ -396,6 +396,20 @@ public class GlobalExceptionHandler {
         return problem;
     }
 
+    // 409 Conflict: a per-account quota was hit (H6) - too many listings, or too many images on a
+    // listing. Distinct from the data-conflict below: nothing "already exists" by unique key, the
+    // account has simply reached a configured cap.
+    @ExceptionHandler(QuotaExceededException.class)
+    public ProblemDetail handleQuotaExceeded(QuotaExceededException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,           // 409
+                ex.getMessage());
+        problem.setTitle("Quota exceeded");
+        problem.setProperty("resource", ex.getResource());
+        problem.setProperty("limit", ex.getLimit());
+        return problem;
+    }
+
     // 409 Conflict: a database constraint rejected an otherwise well-formed write. The classic case
     // is two registrations racing on the same email: both pass the service's pre-check, then the
     // unique index rejects the loser. Without this handler that became a 500 (H9).

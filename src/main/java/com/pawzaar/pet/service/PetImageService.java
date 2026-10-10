@@ -3,6 +3,8 @@ package com.pawzaar.pet.service;
 import com.pawzaar.pet.Pet;
 import com.pawzaar.pet.PetNotFoundException;
 import com.pawzaar.pet.PetStatus;
+import com.pawzaar.common.QuotaExceededException;
+import com.pawzaar.common.limits.ListingLimitsProperties;
 import com.pawzaar.pet.dto.PetImageResponse;
 import com.pawzaar.common.image.ImageStorage;
 import com.pawzaar.common.image.ImageValidator;
@@ -38,6 +40,7 @@ public class PetImageService {
     private final PetImageRepository petImageRepository;
     private final ImageStorage petImageStorage;
     private final ImageValidator imageValidator;
+    private final ListingLimitsProperties limits;
 
     public PetImageService(PetRepository petRepository,
                            PetImageRepository petImageRepository,
@@ -45,11 +48,13 @@ public class PetImageService {
                            // Here: the bean named "petImageStorage" (the pet photos bucket). Without
                            // it, Spring would find 3 candidates of the same type and refuse to start.
                            @Qualifier("petImageStorage") ImageStorage petImageStorage,
-                           ImageValidator imageValidator) {
+                           ImageValidator imageValidator,
+                           ListingLimitsProperties limits) {
         this.petRepository = petRepository;
         this.petImageRepository = petImageRepository;
         this.petImageStorage = petImageStorage;
         this.imageValidator = imageValidator;
+        this.limits = limits;
     }
 
     /**
@@ -69,6 +74,11 @@ public class PetImageService {
     public PetImageResponse upload(UUID petId, UUID callerId, MultipartFile file) {
         Pet pet = requirePet(petId);
         PetService.checkOwnership(pet, callerId);
+
+        // H6: cap the images per listing BEFORE spending work validating/storing the bytes.
+        if (petImageRepository.countByPetId(petId) >= limits.getMaxImagesPerListing()) {
+            throw new QuotaExceededException("images per listing", limits.getMaxImagesPerListing());
+        }
 
         ValidatedImage validated = imageValidator.validate(file);
         String storageKey = petImageStorage.store(validated.data(), validated.extension());

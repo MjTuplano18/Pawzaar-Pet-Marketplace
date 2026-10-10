@@ -42,7 +42,7 @@ Currently implemented (through Step 10):
 | **Search & filtering** on `GET /pets` (optional filters + sort allowlist) | ✅ done (Step 10) |
 | Pet detail with a clean 404 (`GET /pets/{id}`) | ✅ done |
 | One consistent error format (RFC 9457) | ✅ done |
-| Automated tests (web slice + DB slice + unit) | ✅ 118 tests |
+| Automated tests (web slice + DB slice + unit) | ✅ 190 tests |
 | User registration with hashed passwords | ✅ done |
 | Login + JWT issuance, token verification on protected routes | ✅ done (Step 6.3) |
 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ done |
@@ -50,6 +50,8 @@ Currently implemented (through Step 10):
 | `USER` → `SELLER` promotion on first listing | ✅ done |
 | **Role-based authorization** via `@PreAuthorize` (seller-only writes) | ✅ done (Step 9) |
 | **Auth rate limiting** (per-IP token bucket → `429`) | ✅ done (Step 11) |
+| **Per-account limits** (listings/seller, images/listing → `409`) | ✅ done |
+| **Moderation** — new listings go live immediately; review queue deferred | 📝 decision |
 | **Listing images**: owner upload, byte-level validation, public serve | ✅ done (Step 12) |
 | **User profile** (displayName/phone/bio) + one avatar per user | ✅ done (Step 13) |
 | Strict CORS allowlist | ✅ done |
@@ -753,6 +755,26 @@ Deviations from the pet-image pattern, and why:
   would be worse.
 * **The URL is derived, never stored** (`avatarUrl` = `/api/v1/me/avatar` when a key exists, else
   `null`), so the key can never leak into a JSON response.
+
+### 6.26 Per-account limits and moderation (H6)
+
+Two guards stop a single account from abusing the marketplace (and its storage bill):
+
+| Limit | Where enforced | Response |
+|---|---|---|
+| Max listings per seller (`pawzaar.limits.max-listings-per-user`, default 20) | `PetService.createPet`, before insert | `409` `QuotaExceededException` |
+| Max images per listing (`pawzaar.limits.max-images-per-listing`, default 10) | `PetImageService.upload`, before validating/storing bytes | `409` `QuotaExceededException` |
+
+Both counters ignore soft-deleted (`HIDDEN`) rows, so deleting a listing frees the slot. The image cap
+is checked *first*, so a request over the cap never touches the validator or the storage backend.
+
+**Moderation — a deliberate deferral.** New listings go live immediately (`Pet.status` defaults to
+`ACTIVE`); there is no human review queue. `PENDING_REVIEW` exists in the enum for a future admin
+workflow and is admin-only on the update path, but nothing sets it on create. This is a product
+decision, not an oversight: for a marketplace starting out, a review gate would block legitimate
+sellers while the abuse it prevents is already bounded by rate limiting and the per-account caps
+above. The upgrade path is to set `PENDING_REVIEW` on create and add an admin endpoint that flips it
+to `ACTIVE`/`HIDDEN` — the status machine already supports it.
 
 ---
 

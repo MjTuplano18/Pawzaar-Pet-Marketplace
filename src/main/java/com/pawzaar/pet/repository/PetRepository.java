@@ -30,4 +30,8 @@ public interface PetRepository extends JpaRepository<Pet, UUID>,
 
     // "My Listings" - all statuses for the owner's dashboard
     Page<Pet> findBySellerId(UUID sellerId, Pageable pageable);
+
+    // H6 quota: counts a seller's listings that are not soft-deleted (HIDDEN), so deleting a
+    // listing frees a quota slot.
+    long countBySellerIdAndStatusNot(UUID sellerId, PetStatus status);
 }

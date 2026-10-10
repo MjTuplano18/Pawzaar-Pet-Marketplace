@@ -1,6 +1,8 @@
 package com.pawzaar.pet.service;
 
 import com.pawzaar.common.PagedResponse;
+import com.pawzaar.common.QuotaExceededException;
+import com.pawzaar.common.limits.ListingLimitsProperties;
 import com.pawzaar.pet.ForbiddenPetAccessException;
 import com.pawzaar.pet.InvalidPetStatusException;
 import com.pawzaar.pet.Pet;
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -62,6 +65,11 @@ class PetServiceTest {
 
     @Mock
     private PetImageRepository petImageRepository;
+
+    // A real instance (with its defaults) so unrelated tests need no stubbing; individual tests
+    // override the cap when they are specifically about the quota (H6).
+    @Spy
+    private ListingLimitsProperties listingLimits = new ListingLimitsProperties();
 
     @InjectMocks
     private PetService petService;
@@ -181,6 +189,35 @@ class PetServiceTest {
         // Posting a listing is what makes someone a seller.
         assertEquals(Role.SELLER, user.getRole());
         verify(userRepository).save(user);
+    }
+
+    @Test
+    void createPetRejectsASellerWhoIsAtTheListingLimit() {
+        // H6: the seller already has the maximum number of non-deleted listings.
+        when(listingLimits.getMaxListingsPerUser()).thenReturn(3);
+        when(petRepository.countBySellerIdAndStatusNot(OWNER_ID, PetStatus.HIDDEN)).thenReturn(3L);
+
+        PetCreateRequest req = new PetCreateRequest(
+                "Fluffy Shih Tzu", Species.DOG, "Shih Tzu", 12,
+                new BigDecimal("9000.00"), "House trained.", "Quezon City", "Metro Manila", "FEMALE");
+
+        assertThrows(QuotaExceededException.class, () -> petService.createPet(OWNER_ID, req));
+        // Nothing is written when the quota is hit.
+        verify(petRepository, never()).save(any());
+    }
+
+    @Test
+    void createPetAllowsASellerBelowTheListingLimit() {
+        when(listingLimits.getMaxListingsPerUser()).thenReturn(3);
+        when(petRepository.countBySellerIdAndStatusNot(OWNER_ID, PetStatus.HIDDEN)).thenReturn(2L);
+        when(petRepository.save(any(Pet.class))).thenReturn(petWithId(OWNER_ID, PET_ID));
+
+        PetCreateRequest req = new PetCreateRequest(
+                "Fluffy Shih Tzu", Species.DOG, "Shih Tzu", 12,
+                new BigDecimal("9000.00"), "House trained.", "Quezon City", "Metro Manila", "FEMALE");
+
+        assertEquals(PET_ID, petService.createPet(OWNER_ID, req).id());
+        verify(petRepository).save(any(Pet.class));
     }
 
     // ── updatePet ──────────────────────────────────────────────────────────────

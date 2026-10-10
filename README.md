@@ -30,6 +30,7 @@ stateless JWT auth with refresh-token rotation, role-based authorization, automa
 - **One error format** — every error is an RFC 9457 `application/problem+json` response.
 - **Abuse protection** — the auth endpoints are rate limited per client IP (token bucket) and return
   **429** `problem+json` with a `Retry-After` header; spoofed `X-Forwarded-For` is ignored by default.
+  Per-account caps (max listings per seller, max images per listing) return **409**.
 - **Listing images** — owners upload JPEG/PNG/WebP photos, validated by declared type, size, **and
   magic bytes**; the cover appears on cards, all images on the detail page, and the bytes stream back
   with a cache header. Every upload is **re-encoded to strip EXIF/GPS metadata** and its **pixel
