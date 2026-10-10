@@ -42,7 +42,7 @@ Currently implemented (through Step 10):
 | **Search & filtering** on `GET /pets` (optional filters + sort allowlist) | ✅ done (Step 10) |
 | Pet detail with a clean 404 (`GET /pets/{id}`) | ✅ done |
 | One consistent error format (RFC 9457) | ✅ done |
-| Automated tests (web slice + DB slice + unit) | ✅ 190 tests |
+| Automated tests (web slice + DB slice + unit) | ✅ 194 tests |
 | User registration with hashed passwords | ✅ done |
 | Login + JWT issuance, token verification on protected routes | ✅ done (Step 6.3) |
 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ done |
@@ -649,9 +649,11 @@ The flow, with **rotation**:
 POST /auth/login     → {accessToken, refreshToken}
    … 30 min later the access token is expired …
 POST /auth/refresh   {refreshToken}
-   → look up by hash; reject if unknown / expired / revoked (401)
-   → mark the presented token revoked        ← rotation: it is now burned
-   → return a NEW pair {accessToken, refreshToken}
+   → look up by hash; unknown / expired → 401
+   → already revoked?  → leak: revoke the WHOLE family, 401   ← reuse detection (H3)
+   → UPDATE … SET revoked = true WHERE hash = ? AND revoked = false
+        changed 1 row → return a NEW pair {accessToken, refreshToken}
+        changed 0 rows → someone raced us: revoke the family, 401
 POST /auth/logout    {refreshToken}          → revoke it (204, idempotent)
 ```
 
@@ -660,6 +662,16 @@ real client refreshes next — and any replay of the old one is rejected. Both e
 (whitelisted): a client whose access token just expired must still reach `/auth/refresh`, and the
 refresh token in the body *is* the credential. Tokens are never logged; `TokenResponse.toString()`
 masks them.
+
+**H3 — atomic rotation and reuse detection.** The rotation above is a *read-then-write*, which races:
+two requests replaying the same token could both read "active" before either write commits and both
+be issued new pairs. `refresh` therefore claims the token with a single conditional UPDATE
+(`RefreshTokenRepository.revokeIfActive`), and only the request that changes one row proceeds; the
+loser is treated as reuse. Reuse detection is the second half: presenting a token that is *already*
+revoked means it leaked (an attacker replaying an old token, or the client having lost the newer
+one), so **the user's entire token family is revoked** (`revokeAllForUser`) and they must log in
+again. This is the standard refresh-token-reuse defence; it deliberately trades "a false alarm logs
+the user out" for "a leaked token cannot silently mint access".
 
 ### 6.23 Rate limiting — protecting the auth endpoints
 

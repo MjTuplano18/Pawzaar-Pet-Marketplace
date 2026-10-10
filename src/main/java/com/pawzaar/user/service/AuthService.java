@@ -188,14 +188,36 @@ public class AuthService {
      * stolen refresh token is only usable until the legitimate client next refreshes. The used row
      * is revoked rather than deleted, so a replayed token is detected instead of being ignored.
      *
-     * @throws InvalidRefreshTokenException if the token is unknown, expired, or already revoked
+     * <p>H3: rotation is ATOMIC. The token is claimed with a single conditional UPDATE
+     * ({@link RefreshTokenRepository#revokeIfActive}); only one concurrent refresh can win. And if the
+     * presented token is already revoked, that is replay/leak detection - the user's entire token
+     * family is revoked and they must log in again.
+     *
+     * @throws InvalidRefreshTokenException if the token is unknown, expired, already revoked, or lost
+     *                                      a concurrent rotation race
      */
     @Transactional
     public TokenResponse refresh(String rawRefreshToken) {
-        RefreshToken stored = refreshTokenRepository.findByTokenHash(sha256Hex(rawRefreshToken))
+        String tokenHash = sha256Hex(rawRefreshToken);
+        RefreshToken stored = refreshTokenRepository.findByTokenHash(tokenHash)
                 .orElseThrow(InvalidRefreshTokenException::new);
 
-        if (!stored.isActive(Instant.now())) {
+        // REUSE DETECTION: a revoked token must never come back. It was rotated at an earlier refresh
+        // or revoked at logout, so seeing it again means it leaked - an attacker replaying an old
+        // token, or the real client having lost the newer one. Burn the whole family and force login.
+        if (stored.isRevoked()) {
+            refreshTokenRepository.revokeAllForUser(stored.getUserId());
+            throw new InvalidRefreshTokenException();
+        }
+
+        if (!stored.getExpiresAt().isAfter(Instant.now())) {
+            throw new InvalidRefreshTokenException();
+        }
+
+        // ATOMIC ROTATION: claim the token in one conditional UPDATE. The winner gets 1; a request
+        // that raced another and lost gets 0, which is treated as reuse (the family is burned).
+        if (refreshTokenRepository.revokeIfActive(tokenHash) == 0) {
+            refreshTokenRepository.revokeAllForUser(stored.getUserId());
             throw new InvalidRefreshTokenException();
         }
 
@@ -203,7 +225,6 @@ public class AuthService {
                 // The user could have been deleted since the token was issued.
                 .orElseThrow(InvalidRefreshTokenException::new);
 
-        stored.revoke();   // rotation: the old token can never be used again
         return issueTokens(user);
     }
 

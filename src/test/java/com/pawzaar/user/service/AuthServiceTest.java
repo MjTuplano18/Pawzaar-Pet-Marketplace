@@ -202,6 +202,8 @@ class AuthServiceTest {
         RefreshToken stored = RefreshToken.issue(
                 user.getId(), "irrelevant-hash", Instant.now().plusSeconds(3600));
         when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(stored));
+        // H3: rotation now claims the token with a single conditional UPDATE - this request wins.
+        when(refreshTokenRepository.revokeIfActive(anyString())).thenReturn(1);
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
         stubToken();
 
@@ -211,7 +213,7 @@ class AuthServiceTest {
         assertNotNull(response.refreshToken());
 
         // ROTATION: the presented token is burned, and a brand-new one is issued.
-        assertTrue(stored.isRevoked(), "the used refresh token must be revoked");
+        verify(refreshTokenRepository).revokeIfActive(anyString());
         verify(refreshTokenRepository).save(any(RefreshToken.class));
     }
 
@@ -224,13 +226,35 @@ class AuthServiceTest {
     }
 
     @Test
-    void refreshWithRevokedTokenFails() {
-        RefreshToken stored = RefreshToken.issue(UUID.randomUUID(), "h", Instant.now().plusSeconds(3600));
+    void refreshWithRevokedTokenFailsAndBurnsTheWholeFamily() {
+        // H3: replaying a token that was already rotated/revoked means it leaked. Every active token
+        // for that user must be revoked, not just the one presented.
+        UUID userId = UUID.randomUUID();
+        RefreshToken stored = RefreshToken.issue(userId, "h", Instant.now().plusSeconds(3600));
         stored.revoke();
         when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(stored));
 
         assertThrows(InvalidRefreshTokenException.class,
                 () -> authService.refresh("already-used"));
+
+        verify(refreshTokenRepository).revokeAllForUser(userId);
+        verify(userRepository, never()).findById(any());
+    }
+
+    @Test
+    void refreshTreatsAConcurrentRotationLossAsReuse() {
+        // H3: the conditional UPDATE changed 0 rows, so another request already rotated this token.
+        // We must not issue a second pair - burn the family and 401.
+        UUID userId = UUID.randomUUID();
+        RefreshToken stored = RefreshToken.issue(userId, "h", Instant.now().plusSeconds(3600));
+        when(refreshTokenRepository.findByTokenHash(anyString())).thenReturn(Optional.of(stored));
+        when(refreshTokenRepository.revokeIfActive(anyString())).thenReturn(0);
+
+        assertThrows(InvalidRefreshTokenException.class,
+                () -> authService.refresh("racing-token"));
+
+        verify(refreshTokenRepository).revokeAllForUser(userId);
+        verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
     }
 
     @Test
