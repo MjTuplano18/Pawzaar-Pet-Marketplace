@@ -5,6 +5,7 @@ import com.pawzaar.config.JwtConfig;
 import com.pawzaar.config.SecurityConfig;
 import com.pawzaar.pet.ForbiddenPetAccessException;
 import com.pawzaar.pet.InvalidPetStatusException;
+import com.pawzaar.pet.InvalidFilterException;
 import com.pawzaar.pet.PetNotFoundException;
 import com.pawzaar.pet.PetStatus;
 import com.pawzaar.pet.Species;
@@ -171,6 +172,39 @@ class PetControllerTest {
         Sort.Order order = captor.getValue().getSort().getOrderFor("price");
         assertEquals("price", order.getProperty());
         assertEquals(Sort.Direction.ASC, order.getDirection());
+    }
+
+    @Test
+    void listSortAlwaysAppendsAnIdTiebreaker() throws Exception {
+        // M3: a non-unique sort key (price here) must be followed by the unique id, so rows with
+        // equal prices keep a fixed order across pages instead of drifting between them.
+        when(petService.listPets(any(), any()))
+                .thenReturn(new PagedResponse<>(List.of(), 0, 20, 0, 0));
+
+        mockMvc.perform(get("/api/v1/pets")
+                        .param("sort", "price")
+                        .param("order", "asc"))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(petService).listPets(any(), captor.capture());
+        List<Sort.Order> orders = captor.getValue().getSort().stream().toList();
+        assertEquals(List.of("price", "id"), orders.stream().map(Sort.Order::getProperty).toList());
+    }
+
+    @Test
+    void minPriceAboveMaxPriceYields400ProblemDetail() throws Exception {
+        // M3: the service rejects an inverted range; the handler renders it as problem+json.
+        when(petService.listPets(any(), any()))
+                .thenThrow(new InvalidFilterException("minPrice", "minPrice must not be greater than maxPrice"));
+
+        mockMvc.perform(get("/api/v1/pets")
+                        .param("minPrice", "500")
+                        .param("maxPrice", "100"))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.title").value("Invalid search filter"))
+                .andExpect(jsonPath("$.parameter").value("minPrice"));
     }
 
     @Test

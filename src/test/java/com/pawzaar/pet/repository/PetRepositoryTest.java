@@ -214,6 +214,76 @@ class PetRepositoryTest {
     }
 
     @Test
+    void specCityAndProvinceMatchCaseInsensitively() {
+        // M3: the stored values are Title Case; a client may send any casing.
+        User seller = seller();
+        pet(seller, "GR", Species.DOG, "Golden Retriever", 3, 15000, "Quezon City", "Metro Manila");
+        pet(seller, "Shih", Species.DOG, "Shih Tzu", 12, 9000, "Cebu City", "Cebu");
+
+        Page<Pet> byProvince = search(new PetFilter(
+                null, "metro manila", null, null, null, null, null, null));
+        assertEquals(1, byProvince.getTotalElements());
+        assertEquals("Golden Retriever", byProvince.getContent().get(0).getBreed());
+
+        Page<Pet> byCity = search(new PetFilter(
+                null, null, "CEBU CITY", null, null, null, null, null));
+        assertEquals(1, byCity.getTotalElements());
+        assertEquals("Shih Tzu", byCity.getContent().get(0).getBreed());
+    }
+
+    @Test
+    void specBreedSearchTreatsWildcardsLiterally() {
+        // M3: '%' must be matched as a character, not as "match anything". Unescaped, the term
+        // "50%" would become LIKE '%50%%' and match BOTH breeds (they both contain "50").
+        User seller = seller();
+        pet(seller, "A", Species.DOG, "Golden 50% Retriever", 3, 15000, "City A", "Province A");
+        pet(seller, "B", Species.DOG, "Golden 50 Retriever", 4, 12000, "City B", "Province A");
+
+        Page<Pet> literal = search(new PetFilter(
+                null, null, null, "50%", null, null, null, null));
+
+        assertEquals(1, literal.getTotalElements());
+        assertEquals("Golden 50% Retriever", literal.getContent().get(0).getBreed());
+    }
+
+    @Test
+    void specBreedSearchTreatsUnderscoreLiterally() {
+        // M3: '_' is the single-character wildcard; escaped, it must not match "pugxa".
+        User seller = seller();
+        pet(seller, "A", Species.DOG, "pug_a", 3, 15000, "City A", "Province A");
+        pet(seller, "B", Species.DOG, "pugxa", 4, 12000, "City B", "Province A");
+
+        Page<Pet> literal = search(new PetFilter(
+                null, null, null, "pug_a", null, null, null, null));
+
+        assertEquals(1, literal.getTotalElements());
+        assertEquals("pug_a", literal.getContent().get(0).getBreed());
+    }
+
+    @Test
+    void specSortsByTheIdTiebreakerWhenValuesTie() {
+        // M3: equal sort values are ordered deterministically by id, so paging cannot drop or
+        // duplicate a row. Ids are random UUIDs, so we sort them in Java to know the expectation.
+        User seller = seller();
+        Pet a = pet(seller, "A", Species.DOG, "Labrador", 3, 10000, "City A", "Province A");
+        Pet b = pet(seller, "B", Species.DOG, "Labrador", 3, 10000, "City B", "Province A");
+        Pet c = pet(seller, "C", Species.DOG, "Labrador", 3, 10000, "City C", "Province A");
+
+        Page<Pet> page = petRepository.findAll(
+                PetSpecifications.activeMatching(noFilters()),
+                PageRequest.of(0, 50, Sort.by(Sort.Direction.ASC, "price")
+                        .and(Sort.by(Sort.Direction.ASC, "id"))));
+
+        List<UUID> returned = page.getContent().stream().map(Pet::getId).toList();
+        // PostgreSQL compares UUIDs as unsigned 128-bit values; the canonical string form has the
+        // same ordering, whereas UUID.compareTo is signed and would disagree on high-bit ids.
+        List<UUID> expected = java.util.stream.Stream.of(a.getId(), b.getId(), c.getId())
+                .sorted(java.util.Comparator.comparing(UUID::toString))
+                .toList();
+        assertEquals(expected, returned);
+    }
+
+    @Test
     void specFiltersByPriceRange() {
         // Fixture prices: 15000 (Golden Retriever), 9000 (Shih Tzu), 12000 (Persian).
         User seller = seller();

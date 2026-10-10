@@ -8,6 +8,7 @@ import org.springframework.data.jpa.domain.Specification;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * WHERE-clause fragments for the pet feed, built as JPA Specifications.
@@ -17,6 +18,9 @@ import java.util.List;
  * (which would be 2^n methods for n optional filters).
  */
 public final class PetSpecifications {
+
+    /** Escape character for LIKE: {@code \} in the SQL, chosen because it is rarely in a breed name. */
+    private static final char LIKE_ESCAPE = '\\';
 
     private PetSpecifications() {
     }
@@ -43,15 +47,19 @@ public final class PetSpecifications {
                 predicates.add(cb.equal(root.get("species"), filter.species()));
             }
             if (filter.province() != null) {
-                predicates.add(cb.equal(root.get("province"), filter.province()));
+                // M3: case-insensitive - "metro manila" and "Metro Manila" are the same place.
+                predicates.add(cb.equal(cb.lower(root.get("province")),
+                        filter.province().toLowerCase(Locale.ROOT)));
             }
             if (filter.city() != null) {
-                predicates.add(cb.equal(root.get("city"), filter.city()));
+                predicates.add(cb.equal(cb.lower(root.get("city")),
+                        filter.city().toLowerCase(Locale.ROOT)));
             }
             if (filter.breed() != null) {
-                // Case-insensitive "contains": lower(breed) LIKE %term%.
-                predicates.add(cb.like(cb.lower(root.get("breed")),
-                        "%" + filter.breed().toLowerCase() + "%"));
+                // Case-insensitive "contains": lower(breed) LIKE %term%. M3: the user's % and _ are
+                // escaped so they match literally instead of acting as wildcards.
+                String pattern = "%" + escapeLike(filter.breed().toLowerCase(Locale.ROOT)) + "%";
+                predicates.add(cb.like(cb.lower(root.get("breed")), pattern, LIKE_ESCAPE));
             }
             if (filter.minPrice() != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("price"), filter.minPrice()));
@@ -69,5 +77,17 @@ public final class PetSpecifications {
             // AND every clause together into one WHERE.
             return cb.and(predicates.toArray(new Predicate[0]));
         };
+    }
+
+    /**
+     * Escapes the LIKE metacharacters so a search term is matched literally (M3). Without this a
+     * client typing {@code %} would match every breed - a wildcard they never asked for, and a cheap
+     * way to scan the whole table. Backslash must be escaped first, or it would double-escape the
+     * escapes we add next.
+     */
+    private static String escapeLike(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 }

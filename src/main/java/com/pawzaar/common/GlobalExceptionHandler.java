@@ -4,6 +4,7 @@ package com.pawzaar.common;
 import com.pawzaar.common.ratelimit.RateLimitExceededException;   // "too many auth requests"  -> 429
 import com.pawzaar.pet.ForbiddenPetAccessException;           // "not your listing"        -> 403
 import com.pawzaar.pet.InvalidPetStatusException;           // "admin-only status"       -> 400
+import com.pawzaar.pet.InvalidFilterException;              // "min > max range"        -> 400
 import com.pawzaar.pet.InvalidSortException;               // "bad sort field/order"    -> 400
 import com.pawzaar.pet.PetNotFoundException;               // "no pet with that id"     -> 404
 import com.pawzaar.common.image.ImageStorageException;        // storage backend failure  -> 502
@@ -177,6 +178,17 @@ public class GlobalExceptionHandler {
                 ex.getMessage());              // "'x' is not a valid value for 'sort'; allowed: ..."
         problem.setTitle("Invalid sort parameter");
         problem.setProperty(ex.getParameter(), ex.getValue());
+        return problem;
+    }
+
+    // 400 Bad Request: the search filters contradict each other (M3) - e.g. minPrice > maxPrice.
+    @ExceptionHandler(InvalidFilterException.class)
+    public ProblemDetail handleInvalidFilter(InvalidFilterException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,        // 400
+                ex.getMessage());
+        problem.setTitle("Invalid search filter");
+        problem.setProperty("parameter", ex.getParameter());
         return problem;
     }
 

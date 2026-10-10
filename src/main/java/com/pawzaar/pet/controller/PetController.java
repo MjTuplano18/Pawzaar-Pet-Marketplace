@@ -128,6 +128,10 @@ public class PetController {
     /**
      * Turns the client's sort key + order into a Spring Data Sort, refusing anything not on
      * the allowlist. This is the only place sort input is read, and it is never trusted.
+     *
+     * <p>M3: {@code id} is always appended as a tiebreaker. Without it, rows with equal
+     * {@code price}/{@code ageMonths}/timestamps have no defined order, so a row can appear on two
+     * pages (or none) as the client pages through. {@code id} is unique, which makes the order total.
      */
     private static Sort parseSort(String sort, String order) {
         if (!SORTABLE_FIELDS.contains(sort)) {
@@ -139,7 +143,7 @@ public class PetController {
         } catch (IllegalArgumentException e) {
             throw new InvalidSortException("order", order, List.of("asc", "desc"));
         }
-        return Sort.by(direction, sort);
+        return Sort.by(direction, sort).and(Sort.by(Sort.Direction.ASC, "id"));
     }
 
     /**
@@ -224,7 +228,8 @@ public class PetController {
         PageRequest pageable = PageRequest.of(
                 Math.max(page, 0),
                 Math.min(size, 50),
-                Sort.by(Sort.Direction.DESC, "createdAt"));
+                // M3: id tiebreaker keeps "my listings" stable across pages when created_at ties.
+                Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.ASC, "id")));
 
         return petService.getMyPets(sellerId, pageable);
     }

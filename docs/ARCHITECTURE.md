@@ -42,7 +42,7 @@ Currently implemented (through Step 10):
 | **Search & filtering** on `GET /pets` (optional filters + sort allowlist) | ✅ done (Step 10) |
 | Pet detail with a clean 404 (`GET /pets/{id}`) | ✅ done |
 | One consistent error format (RFC 9457) | ✅ done |
-| Automated tests (web slice + DB slice + unit) | ✅ 199 tests |
+| Automated tests (web slice + DB slice + unit) | ✅ 208 tests |
 | User registration with hashed passwords | ✅ done |
 | Login + JWT issuance, token verification on protected routes | ✅ done (Step 6.3) |
 | Refresh tokens: rotation, revocation, `POST /auth/refresh` + `/auth/logout` | ✅ done |
@@ -480,12 +480,27 @@ Why the sort **allowlist**? Handing a raw client string to `Sort.by(...)` lets a
 Data, which throws `PropertyReferenceException` (a 500), and lets clients sort by any column —
 including unindexed ones — which is a cheap denial-of-service. `parseSort` accepts only
 `createdAt`, `price`, or `ageMonths` and only `asc`/`desc`; anything else becomes a domain
-`InvalidSortException` → **400** `problem+json`.
+`InvalidSortException` → **400** `problem+json`. The sort is always finished with a unique **`id`
+tiebreaker** (M3): without it, rows with equal prices/ages/timestamps have no defined order, so a
+row can be returned on two pages — or skipped — as the client pages through the feed.
+
+**M3 — search hardening.** Three small rules keep the filter feature honest:
+
+* **City and province match case-insensitively.** `lower(city) = lower(:city)` so `?province=metro
+  manila` finds `Metro Manila`. Exact, case-sensitive equality would silently miss rows.
+* **Breed `LIKE` escapes its wildcards.** A term becomes `%…%` for a "contains" search, so a client
+  typing `%` or `_` would inject SQL wildcards and match the whole table. `escapeLike` prefixes them
+  with a backslash and the predicate declares `ESCAPE '\'`, so the metacharacters are matched
+  literally.
+* **Inverted ranges are a 400.** `minPrice > maxPrice` (or `minAgeMonths > maxAgeMonths`) can only
+  match nothing, which almost always means the client swapped the two, so `PetService.listPets`
+  throws `InvalidFilterException` before touching the database.
 
 ### 6.12 Domain exceptions
 
 `PetNotFoundException`, `ForbiddenPetAccessException`, `InvalidPetStatusException`,
-`InvalidSortException`, `EmailAlreadyRegisteredException`, `InvalidCredentialsException`,
+`InvalidSortException`, `InvalidFilterException`, `EmailAlreadyRegisteredException`,
+`InvalidCredentialsException`,
 `InvalidRefreshTokenException`:
 they describe *what went wrong* in business language and know nothing about HTTP.
 `GlobalExceptionHandler` decides how each one becomes a status code. Extending `RuntimeException`

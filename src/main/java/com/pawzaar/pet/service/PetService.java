@@ -4,6 +4,7 @@ import com.pawzaar.common.PagedResponse;
 import com.pawzaar.common.QuotaExceededException;
 import com.pawzaar.common.limits.ListingLimitsProperties;
 import com.pawzaar.pet.ForbiddenPetAccessException;
+import com.pawzaar.pet.InvalidFilterException;
 import com.pawzaar.pet.InvalidPetStatusException;
 import com.pawzaar.pet.Pet;
 import com.pawzaar.pet.PetNotFoundException;
@@ -64,9 +65,27 @@ public class PetService {
     /** Paginated list of ACTIVE listings matching the optional filters - the public search feed. */
     @Transactional(readOnly = true)
     public PagedResponse<PetSummary> listPets(PetFilter filter, Pageable pageable) {
+        validateFilter(filter);
         Page<Pet> page = petRepository.findAll(PetSpecifications.activeMatching(filter), pageable);
         Map<UUID, String> covers = coverUrlsFor(page.getContent());
         return PagedResponse.of(page.map(pet -> toSummary(pet, covers.get(pet.getId()))));
+    }
+
+    /**
+     * M3: a range with its minimum above its maximum can only ever match nothing, which almost always
+     * means the client swapped the two. Reject it as a 400 instead of silently returning an empty page.
+     */
+    private static void validateFilter(PetFilter filter) {
+        if (filter.minPrice() != null && filter.maxPrice() != null
+                && filter.minPrice().compareTo(filter.maxPrice()) > 0) {
+            throw new InvalidFilterException("minPrice",
+                    "minPrice must not be greater than maxPrice");
+        }
+        if (filter.minAgeMonths() != null && filter.maxAgeMonths() != null
+                && filter.minAgeMonths() > filter.maxAgeMonths()) {
+            throw new InvalidFilterException("minAgeMonths",
+                    "minAgeMonths must not be greater than maxAgeMonths");
+        }
     }
 
     /** Full detail for one ACTIVE listing. Hidden and sold pets are invisible to the public. */

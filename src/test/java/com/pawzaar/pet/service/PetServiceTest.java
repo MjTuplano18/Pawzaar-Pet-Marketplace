@@ -4,6 +4,7 @@ import com.pawzaar.common.PagedResponse;
 import com.pawzaar.common.QuotaExceededException;
 import com.pawzaar.common.limits.ListingLimitsProperties;
 import com.pawzaar.pet.ForbiddenPetAccessException;
+import com.pawzaar.pet.InvalidFilterException;
 import com.pawzaar.pet.InvalidPetStatusException;
 import com.pawzaar.pet.Pet;
 import com.pawzaar.pet.PetNotFoundException;
@@ -123,6 +124,42 @@ class PetServiceTest {
         PagedResponse<PetSummary> result = petService.listPets(filter, pageable);
 
         assertNull(result.content().get(0).coverImageUrl());
+    }
+
+    @Test
+    void listPetsRejectsAMinPriceAboveTheMaxPrice() {
+        // M3: an inverted range can only match nothing, so it is a client mistake -> 400, not an
+        // empty page. The repository must never be queried.
+        PetFilter filter = new PetFilter(null, null, null, null,
+                new BigDecimal("5000"), new BigDecimal("1000"), null, null);
+
+        assertThrows(InvalidFilterException.class,
+                () -> petService.listPets(filter, PageRequest.of(0, 20)));
+
+        verifyNoInteractions(petRepository);
+    }
+
+    @Test
+    void listPetsRejectsAMinAgeAboveTheMaxAge() {
+        PetFilter filter = new PetFilter(null, null, null, null,
+                null, null, 24, 6);
+
+        assertThrows(InvalidFilterException.class,
+                () -> petService.listPets(filter, PageRequest.of(0, 20)));
+
+        verifyNoInteractions(petRepository);
+    }
+
+    @Test
+    void listPetsAllowsAnEqualMinAndMaxPrice() {
+        // A single-point range is legitimate; only min > max is rejected.
+        PageRequest pageable = PageRequest.of(0, 20);
+        PetFilter filter = new PetFilter(null, null, null, null,
+                new BigDecimal("1000"), new BigDecimal("1000"), null, null);
+        when(petRepository.findAll(any(Specification.class), eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        assertDoesNotThrow(() -> petService.listPets(filter, pageable));
     }
 
     // ── getPet ─────────────────────────────────────────────────────────────────

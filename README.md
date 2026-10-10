@@ -161,9 +161,10 @@ returns **429** `problem+json` with a `Retry-After` header.
 List endpoints are paginated (`?page=0&size=20`) and the page size is hard-capped at **50**.
 
 `GET /pets` also accepts optional filters — `species=DOG` (exact), `province=Bulacan` and
-`city=Quezon%20City` (exact), `breed=retriever` (case-insensitive contains), `minPrice`/`maxPrice`,
-and `minAgeMonths`/`maxAgeMonths` — plus `sort` (`createdAt`, `price`, `ageMonths`) and `order`
-(`asc`/`desc`, default `desc`). An unknown sort field or direction returns **400** `problem+json`.
+`city=Quezon%20City` (case-insensitive), `breed=retriever` (case-insensitive contains; `%` and `_`
+are matched literally), `minPrice`/`maxPrice`, and `minAgeMonths`/`maxAgeMonths` — plus `sort`
+(`createdAt`, `price`, `ageMonths`) and `order` (`asc`/`desc`, default `desc`). An unknown sort field
+or direction, or a `min` greater than its `max`, returns **400** `problem+json`.
 
 ```
 GET /api/v1/pets?species=DOG&maxPrice=15000&sort=price&order=asc
