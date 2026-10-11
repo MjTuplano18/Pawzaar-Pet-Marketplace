@@ -2,6 +2,9 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field } from '../components/Field'
 import { resetPassword } from '../lib/auth'
 import { ApiError } from '../lib/api'
@@ -19,22 +22,29 @@ export function ResetPasswordPage() {
 
   if (!token) {
     return (
-      <div className="auth-card">
-        <h1>Reset link is missing</h1>
-        <div className="alert alert-error">
-          This page needs a token from your email. Open the link we emailed you, or request a new
-          one.
-        </div>
-        <p>
-          <Link className="button" to="/forgot-password">
-            Request a new link
-          </Link>
-        </p>
+      <div className="mx-auto mt-10 w-full max-w-sm">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl">Reset link is missing</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Alert variant="destructive">
+              <AlertDescription>
+                This page needs a token from your email. Open the link we emailed you, or request a
+                new one.
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+          <CardFooter>
+            <Button asChild className="w-full">
+              <Link to="/forgot-password">Request a new link</Link>
+            </Button>
+          </CardFooter>
+        </Card>
       </div>
     )
   }
 
-  // Narrowed to a plain string for use inside the submit closure below.
   const resetToken: string = token
 
   async function handleSubmit(e: FormEvent) {
@@ -71,54 +81,68 @@ export function ResetPasswordPage() {
 
   if (done) {
     return (
-      <div className="auth-card">
-        <h1>Password updated ✅</h1>
-        <p>
-          Your password has been changed. For your security we signed out every other session — log
-          in again with your new password.
-        </p>
-        <p>
-          <Link className="button" to="/login">
-            Log in
-          </Link>
-        </p>
+      <div className="mx-auto mt-10 w-full max-w-sm">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl">Password updated ✅</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm">
+            <p>
+              Your password has been changed. For your security we signed out every other session —
+              log in again with your new password.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button asChild className="w-full">
+              <Link to="/login">Log in</Link>
+            </Button>
+          </CardFooter>
+        </Card>
       </div>
     )
   }
 
   return (
-    <div className="auth-card">
-      <h1>Choose a new password</h1>
-      <p className="muted">Pick something you haven't used before.</p>
-
-      {error && <div className="alert alert-error">{error}</div>}
-
-      <form onSubmit={handleSubmit} noValidate>
-        <Field
-          id="newPassword"
-          label="New password"
-          type="password"
-          value={newPassword}
-          onChange={setNewPassword}
-          error={fieldErrors.newPassword}
-          hint="8–72 characters."
-          autoComplete="new-password"
-          required
-        />
-        <Field
-          id="confirm"
-          label="Confirm new password"
-          type="password"
-          value={confirm}
-          onChange={setConfirm}
-          error={fieldErrors.confirm}
-          autoComplete="new-password"
-          required
-        />
-        <button className="button button-block" type="submit" disabled={submitting}>
-          {submitting ? 'Saving…' : 'Set new password'}
-        </button>
-      </form>
+    <div className="mx-auto mt-10 w-full max-w-sm">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl">Choose a new password</CardTitle>
+          <CardDescription>Pick something you haven't used before.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          <form onSubmit={handleSubmit} noValidate className="space-y-2">
+            <Field
+              id="newPassword"
+              label="New password"
+              type="password"
+              value={newPassword}
+              onChange={setNewPassword}
+              error={fieldErrors.newPassword}
+              hint="8–72 characters."
+              autoComplete="new-password"
+              required
+            />
+            <Field
+              id="confirm"
+              label="Confirm new password"
+              type="password"
+              value={confirm}
+              onChange={setConfirm}
+              error={fieldErrors.confirm}
+              autoComplete="new-password"
+              required
+            />
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? 'Saving…' : 'Set new password'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   )
 }

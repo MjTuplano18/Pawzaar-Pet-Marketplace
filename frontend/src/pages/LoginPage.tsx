@@ -2,8 +2,11 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
-import { useAuth } from '../auth/auth-context'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field } from '../components/Field'
+import { useAuth } from '../auth/auth-context'
 import { ApiError } from '../lib/api'
 
 export function LoginPage() {
@@ -25,7 +28,6 @@ export function LoginPage() {
       await login(email.trim(), password)
       navigate(from, { replace: true })
     } catch (err) {
-      // The API returns one generic 401 for both a wrong password and an unknown email, on purpose.
       setError(
         err instanceof ApiError ? err.detail || err.title : 'Something went wrong. Please try again.',
       )
@@ -35,43 +37,54 @@ export function LoginPage() {
   }
 
   return (
-    <div className="auth-card">
-      <h1>Welcome back</h1>
-      <p className="muted">Log in to manage your Pawzaar account.</p>
-
-      {error && <div className="alert alert-error">{error}</div>}
-
-      <form onSubmit={handleSubmit} noValidate>
-        <Field
-          id="email"
-          label="Email"
-          type="email"
-          value={email}
-          onChange={setEmail}
-          autoComplete="email"
-          required
-        />
-        <Field
-          id="password"
-          label="Password"
-          type="password"
-          value={password}
-          onChange={setPassword}
-          autoComplete="current-password"
-          required
-        />
-
-        <button className="button button-block" type="submit" disabled={submitting}>
-          {submitting ? 'Logging in…' : 'Log in'}
-        </button>
-      </form>
-
-      <div className="auth-links">
-        <Link to="/forgot-password">Forgot your password?</Link>
-        <span>
-          New here? <Link to="/register">Create an account</Link>
-        </span>
-      </div>
+    <div className="mx-auto mt-10 w-full max-w-sm">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl">Welcome back</CardTitle>
+          <CardDescription>Log in to manage your Pawzaar account.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          <form onSubmit={handleSubmit} noValidate className="space-y-2">
+            <Field
+              id="email"
+              label="Email"
+              type="email"
+              value={email}
+              onChange={setEmail}
+              autoComplete="email"
+              required
+            />
+            <Field
+              id="password"
+              label="Password"
+              type="password"
+              value={password}
+              onChange={setPassword}
+              autoComplete="current-password"
+              required
+            />
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? 'Logging in…' : 'Log in'}
+            </Button>
+          </form>
+        </CardContent>
+        <CardFooter className="flex flex-col gap-2 text-sm text-muted-foreground">
+          <Link to="/forgot-password" className="hover:text-foreground underline underline-offset-4">
+            Forgot your password?
+          </Link>
+          <span>
+            New here?{' '}
+            <Link to="/register" className="underline underline-offset-4 hover:text-foreground">
+              Create an account
+            </Link>
+          </span>
+        </CardFooter>
+      </Card>
     </div>
   )
 }

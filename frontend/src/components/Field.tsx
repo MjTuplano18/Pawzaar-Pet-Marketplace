@@ -1,5 +1,9 @@
 import type { ChangeEvent } from 'react'
 
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
+
 interface FieldProps {
   id: string
   label: string
@@ -13,7 +17,6 @@ interface FieldProps {
   placeholder?: string
 }
 
-/** One labelled input with inline, per-field validation errors. */
 export function Field({
   id,
   label,
@@ -31,9 +34,9 @@ export function Field({
   }
 
   return (
-    <div className="field">
-      <label htmlFor={id}>{label}</label>
-      <input
+    <div className="mb-4 space-y-1.5">
+      <Label htmlFor={id}>{label}{required && <span className="text-destructive ml-0.5">*</span>}</Label>
+      <Input
         id={id}
         name={id}
         type={type}
@@ -43,12 +46,16 @@ export function Field({
         required={required}
         placeholder={placeholder}
         aria-invalid={error ? true : undefined}
-        aria-describedby={error ? `${id}-error` : undefined}
-        className={error ? 'has-error' : undefined}
+        aria-describedby={error ? `${id}-error` : hint ? `${id}-hint` : undefined}
+        className={cn(error && 'border-destructive focus-visible:ring-destructive')}
       />
-      {hint && !error && <p className="field-hint">{hint}</p>}
+      {hint && !error && (
+        <p id={`${id}-hint`} className="text-xs text-muted-foreground">
+          {hint}
+        </p>
+      )}
       {error && (
-        <p className="field-error" id={`${id}-error`}>
+        <p id={`${id}-error`} className="text-xs text-destructive">
           {error}
         </p>
       )}

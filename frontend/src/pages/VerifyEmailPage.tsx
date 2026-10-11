@@ -1,18 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { verifyEmail } from '../lib/auth'
 import { ApiError } from '../lib/api'
 
 type Status = 'idle' | 'verifying' | 'success' | 'error'
 
-/**
- * Landing page for the link emailed by the API: `/verify-email?token=...`.
- *
- * The state is derived from the URL up front (a present token means we start "verifying"), and the
- * effect only runs the side effect. A ref guard makes it run exactly ONCE even under React 19's
- * StrictMode double-invoke in development — a token is single-use, so a second call would fail.
- */
 export function VerifyEmailPage() {
   const [params] = useSearchParams()
   const token = params.get('token')
@@ -37,38 +33,47 @@ export function VerifyEmailPage() {
   }, [token])
 
   return (
-    <div className="auth-card">
-      <h1>Email verification</h1>
+    <div className="mx-auto mt-10 w-full max-w-sm">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl">Email verification</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {status === 'verifying' && (
+            <p className="text-sm text-muted-foreground">Verifying your email…</p>
+          )}
 
-      {status === 'verifying' && <p className="muted">Verifying your email…</p>}
+          {status === 'success' && (
+            <Alert className="border-green-200 bg-green-50 text-green-800">
+              <AlertDescription>Your email is verified. You're all set! 🎉</AlertDescription>
+            </Alert>
+          )}
 
-      {status === 'success' && (
-        <>
-          <div className="alert alert-success">
-            Your email is verified. You're all set! 🎉
-          </div>
-          <p>
-            <Link className="button" to="/login">
-              Go to log in
-            </Link>
-          </p>
-        </>
-      )}
-
-      {status === 'error' && (
-        <>
-          <div className="alert alert-error">{message}</div>
-          <p className="muted">
-            Verification links expire and work only once. Log in and request a fresh one from your
-            profile.
-          </p>
-          <p>
-            <Link className="button button-secondary" to="/login">
-              Back to log in
-            </Link>
-          </p>
-        </>
-      )}
+          {status === 'error' && (
+            <>
+              <Alert variant="destructive">
+                <AlertDescription>{message}</AlertDescription>
+              </Alert>
+              <p className="text-sm text-muted-foreground">
+                Verification links expire and work only once. Log in and request a fresh one from
+                your profile.
+              </p>
+            </>
+          )}
+        </CardContent>
+        <CardFooter>
+          {status === 'success' && (
+            <Button asChild className="w-full">
+              <Link to="/login">Go to log in</Link>
+            </Button>
+          )}
+          {status === 'error' && (
+            <Button asChild variant="secondary" className="w-full">
+              <Link to="/login">Back to log in</Link>
+            </Button>
+          )}
+        </CardFooter>
+      </Card>
     </div>
   )
 }

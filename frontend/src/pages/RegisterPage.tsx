@@ -2,8 +2,11 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 
-import { useAuth } from '../auth/auth-context'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Field } from '../components/Field'
+import { useAuth } from '../auth/auth-context'
 import { ApiError } from '../lib/api'
 
 export function RegisterPage() {
@@ -28,7 +31,6 @@ export function RegisterPage() {
         email: email.trim(),
         password,
         displayName: displayName.trim(),
-        // The field is optional; omit it entirely if blank so the backend keeps it null.
         phone: phone.trim() ? phone.trim() : undefined,
       })
       setDone(true)
@@ -48,83 +50,99 @@ export function RegisterPage() {
 
   if (done) {
     return (
-      <div className="auth-card">
-        <h1>Check your email 📬</h1>
-        <p>
-          Your account was created. We sent a verification link to <strong>{email.trim()}</strong>.
-        </p>
-        <p className="muted">
-          In local development nothing is actually delivered — the link is printed in the API
-          console (run the <code>dev</code> profile with <code>pawzaar.email.log-body=true</code>).
-        </p>
-        <p>
-          <Link className="button" to="/login">
-            Go to log in
-          </Link>
-        </p>
+      <div className="mx-auto mt-10 w-full max-w-sm">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl">Check your email 📬</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p>
+              Your account was created. We sent a verification link to <strong>{email.trim()}</strong>.
+            </p>
+            <p className="text-muted-foreground">
+              In local development nothing is actually delivered — the link is printed in the API
+              console (run the <code className="bg-muted px-1 rounded">dev</code> profile with{' '}
+              <code className="bg-muted px-1 rounded">pawzaar.email.log-body=true</code>).
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Button asChild className="w-full">
+              <Link to="/login">Go to log in</Link>
+            </Button>
+          </CardFooter>
+        </Card>
       </div>
     )
   }
 
   return (
-    <div className="auth-card">
-      <h1>Create your account</h1>
-      <p className="muted">It takes a minute. No credit card, ever.</p>
-
-      {error && <div className="alert alert-error">{error}</div>}
-
-      <form onSubmit={handleSubmit} noValidate>
-        <Field
-          id="displayName"
-          label="Display name"
-          value={displayName}
-          onChange={setDisplayName}
-          error={fieldErrors.displayName}
-          autoComplete="name"
-          required
-        />
-        <Field
-          id="email"
-          label="Email"
-          type="email"
-          value={email}
-          onChange={setEmail}
-          error={fieldErrors.email}
-          autoComplete="email"
-          required
-        />
-        <Field
-          id="phone"
-          label="Phone (optional)"
-          type="tel"
-          value={phone}
-          onChange={setPhone}
-          error={fieldErrors.phone}
-          hint="Philippine mobile numbers only, e.g. +639171234567"
-          autoComplete="tel"
-        />
-        <Field
-          id="password"
-          label="Password"
-          type="password"
-          value={password}
-          onChange={setPassword}
-          error={fieldErrors.password}
-          hint="8–72 characters."
-          autoComplete="new-password"
-          required
-        />
-
-        <button className="button button-block" type="submit" disabled={submitting}>
-          {submitting ? 'Creating account…' : 'Create account'}
-        </button>
-      </form>
-
-      <div className="auth-links">
-        <span>
-          Already have an account? <Link to="/login">Log in</Link>
-        </span>
-      </div>
+    <div className="mx-auto mt-10 w-full max-w-sm">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl">Create your account</CardTitle>
+          <CardDescription>It takes a minute. No credit card, ever.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          <form onSubmit={handleSubmit} noValidate className="space-y-2">
+            <Field
+              id="displayName"
+              label="Display name"
+              value={displayName}
+              onChange={setDisplayName}
+              error={fieldErrors.displayName}
+              autoComplete="name"
+              required
+            />
+            <Field
+              id="email"
+              label="Email"
+              type="email"
+              value={email}
+              onChange={setEmail}
+              error={fieldErrors.email}
+              autoComplete="email"
+              required
+            />
+            <Field
+              id="phone"
+              label="Phone (optional)"
+              type="tel"
+              value={phone}
+              onChange={setPhone}
+              error={fieldErrors.phone}
+              hint="Philippine mobile numbers only, e.g. +639171234567"
+              autoComplete="tel"
+            />
+            <Field
+              id="password"
+              label="Password"
+              type="password"
+              value={password}
+              onChange={setPassword}
+              error={fieldErrors.password}
+              hint="8–72 characters."
+              autoComplete="new-password"
+              required
+            />
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? 'Creating account…' : 'Create account'}
+            </Button>
+          </form>
+        </CardContent>
+        <CardFooter className="text-sm text-muted-foreground">
+          <span>
+            Already have an account?{' '}
+            <Link to="/login" className="underline underline-offset-4 hover:text-foreground">
+              Log in
+            </Link>
+          </span>
+        </CardFooter>
+      </Card>
     </div>
   )
 }
