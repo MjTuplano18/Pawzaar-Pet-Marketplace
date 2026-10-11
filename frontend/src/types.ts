@@ -44,3 +44,53 @@ export interface ProblemDetail {
   instance?: string
   errors?: FieldProblem[]
 }
+
+export type Species = 'DOG' | 'CAT' | 'OTHER'
+export type PetStatus = 'ACTIVE' | 'SOLD' | 'HIDDEN' | 'PENDING_REVIEW'
+
+export interface PetImageResponse {
+  id: string
+  url: string
+  contentType: string
+  sortOrder: number
+}
+
+export interface PetSummary {
+  id: string
+  title: string
+  species: Species
+  breed: string | null
+  price: string
+  city: string
+  province: string
+  sex: string | null
+  status: PetStatus
+  createdAt: string
+  coverImageUrl: string | null
+}
+
+export interface PetResponse {
+  id: string
+  sellerId: string
+  title: string
+  species: Species
+  breed: string | null
+  ageMonths: number
+  price: string
+  description: string | null
+  city: string
+  province: string
+  sex: string | null
+  status: PetStatus
+  createdAt: string
+  updatedAt: string
+  images: PetImageResponse[]
+}
+
+export interface PagedResponse<T> {
+  content: T[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+}

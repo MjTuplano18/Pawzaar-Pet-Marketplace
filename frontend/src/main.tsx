@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 
 import App from './App.tsx'
 import { AuthProvider } from './auth/AuthProvider'
+import { Toaster } from './components/ui/toaster'
 import './index.css'
 
 // One QueryClient for the app. TanStack Query is wired up now so the listing pages can use it next;
@@ -27,6 +28,7 @@ createRoot(rootElement).render(
       <BrowserRouter>
         <AuthProvider>
           <App />
+          <Toaster />
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>
