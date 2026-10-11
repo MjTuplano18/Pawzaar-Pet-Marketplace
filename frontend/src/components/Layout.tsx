@@ -13,6 +13,20 @@ export function Layout() {
     navigate('/')
   }
 
+  const navLink = (to: string, label: string, end = false) => (
+    <NavLink
+      to={to}
+      end={end}
+      className={({ isActive }) =>
+        isActive
+          ? 'text-sm font-medium px-3 py-1.5 text-foreground'
+          : 'text-sm font-medium px-3 py-1.5 text-muted-foreground hover:text-foreground'
+      }
+    >
+      {label}
+    </NavLink>
+  )
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 border-b bg-background">
@@ -21,45 +35,22 @@ export function Layout() {
             🐾 Pawzaar
           </Link>
           <nav className="flex items-center gap-1">
-            <NavLink
-              to="/"
-              end
-              className={({ isActive }) =>
-                isActive
-                  ? 'text-sm font-medium px-3 py-1.5 text-foreground'
-                  : 'text-sm font-medium px-3 py-1.5 text-muted-foreground hover:text-foreground'
-              }
-            >
-              Home
-            </NavLink>
+            {navLink('/', 'Home', true)}
+            {navLink('/pets', 'Browse')}
             {status === 'authenticated' && user ? (
               <>
-                <NavLink
-                  to="/profile"
-                  className={({ isActive }) =>
-                    isActive
-                      ? 'text-sm font-medium px-3 py-1.5 text-foreground'
-                      : 'text-sm font-medium px-3 py-1.5 text-muted-foreground hover:text-foreground'
-                  }
-                >
-                  {user.displayName}
-                </NavLink>
+                {navLink('/dashboard', 'Dashboard')}
+                {navLink('/profile', user.displayName)}
+                <Button asChild size="sm">
+                  <Link to="/pets/new">List a Pet</Link>
+                </Button>
                 <Button variant="ghost" size="sm" onClick={handleLogout}>
                   Log out
                 </Button>
               </>
             ) : status === 'loading' ? null : (
               <>
-                <NavLink
-                  to="/login"
-                  className={({ isActive }) =>
-                    isActive
-                      ? 'text-sm font-medium px-3 py-1.5 text-foreground'
-                      : 'text-sm font-medium px-3 py-1.5 text-muted-foreground hover:text-foreground'
-                  }
-                >
-                  Log in
-                </NavLink>
+                {navLink('/login', 'Log in')}
                 <Button asChild size="sm">
                   <Link to="/register">Sign up</Link>
                 </Button>

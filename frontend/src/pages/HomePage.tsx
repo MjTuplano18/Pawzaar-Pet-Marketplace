@@ -12,32 +12,35 @@ export function HomePage() {
       <div className="space-y-3">
         <h1 className="text-4xl font-bold tracking-tight">Find your next best friend 🐾</h1>
         <p className="text-lg text-muted-foreground">
-          Pawzaar is a pet marketplace for the Philippines. Browse listings, and sign in to post
-          your own.
+          Pawzaar is a pet marketplace for the Philippines. Browse listings from sellers across the country,
+          and sign in to post your own.
         </p>
       </div>
 
       {status === 'authenticated' && user ? (
         <div className="flex justify-center gap-3">
           <Button asChild size="lg">
-            <Link to="/profile">Go to your profile</Link>
+            <Link to="/pets">Browse Pets</Link>
+          </Button>
+          <Button asChild size="lg" variant="secondary">
+            <Link to="/pets/new">List a Pet</Link>
           </Button>
         </div>
       ) : (
         <div className="flex justify-center gap-3">
           <Button asChild size="lg">
-            <Link to="/register">Create an account</Link>
+            <Link to="/pets">Browse Pets</Link>
           </Button>
           <Button asChild size="lg" variant="secondary">
-            <Link to="/login">Log in</Link>
+            <Link to="/register">List a Pet</Link>
           </Button>
         </div>
       )}
 
       <Alert className="text-left">
         <AlertDescription>
-          <strong>What works today:</strong> register, log in, verify your email, and reset your
-          password — the full authentication flow against the Pawzaar API. Listing pages come next.
+          <strong>What works today:</strong> browse all pet listings, view details, create and manage your own
+          listings with photos — plus the full auth flow (register, login, verify email, reset password).
         </AlertDescription>
       </Alert>
     </div>
