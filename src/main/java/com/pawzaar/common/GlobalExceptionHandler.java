@@ -1,6 +1,8 @@
 package com.pawzaar.common;
 
 // === our own domain exceptions (thrown by services, caught here) ===
+import com.pawzaar.adoption.AdoptionRequestNotFoundException;     // "no request with that id" -> 404
+import com.pawzaar.adoption.DuplicateAdoptionRequestException;    // "already pending"         -> 409
 import com.pawzaar.common.ratelimit.RateLimitExceededException;   // "too many auth requests"  -> 429
 import com.pawzaar.pet.ForbiddenPetAccessException;           // "not your listing"        -> 403
 import com.pawzaar.pet.InvalidPetStatusException;           // "admin-only status"       -> 400
@@ -262,6 +264,27 @@ public class GlobalExceptionHandler {
                 ex.getMessage());              // "No user exists with id ..."
         problem.setTitle("User not found");
         problem.setProperty("userId", ex.getUserId());
+        return problem;
+    }
+
+    // 404: no adoption request with the given id exists.
+    @ExceptionHandler(AdoptionRequestNotFoundException.class)
+    public ProblemDetail handleAdoptionRequestNotFound(AdoptionRequestNotFoundException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.NOT_FOUND,          // 404
+                ex.getMessage());
+        problem.setTitle("Adoption request not found");
+        problem.setProperty("requestId", ex.getRequestId());
+        return problem;
+    }
+
+    // 409 Conflict: a PENDING adoption request from the same user for the same pet already exists.
+    @ExceptionHandler(DuplicateAdoptionRequestException.class)
+    public ProblemDetail handleDuplicateAdoptionRequest(DuplicateAdoptionRequestException ex) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,           // 409
+                ex.getMessage());
+        problem.setTitle("Duplicate adoption request");
         return problem;
     }
 

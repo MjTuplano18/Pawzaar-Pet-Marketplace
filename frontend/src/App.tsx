@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom'
 
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { Layout } from './components/Layout'
+import { AdoptionInboxPage } from './pages/AdoptionInboxPage'
 import { BrowsePage } from './pages/BrowsePage'
 import { CreatePetPage } from './pages/CreatePetPage'
 import { DashboardPage } from './pages/DashboardPage'
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="/pets/new" element={<CreatePetPage />} />
           <Route path="/pets/:id/edit" element={<EditPetPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/inbox" element={<AdoptionInboxPage />} />
         </Route>
 
         <Route path="/pets/:id" element={<PetDetailPage />} />

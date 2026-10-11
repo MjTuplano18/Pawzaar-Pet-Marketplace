@@ -94,3 +94,18 @@ export interface PagedResponse<T> {
   totalElements: number
   totalPages: number
 }
+
+export type AdoptionStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN'
+
+/** Mirrors `com.pawzaar.adoption.dto.AdoptionRequestResponse`. */
+export interface AdoptionRequestResponse {
+  id: string
+  petId: string
+  petTitle: string
+  requesterId: string
+  requesterDisplayName: string
+  message: string | null
+  status: AdoptionStatus
+  createdAt: string
+  updatedAt: string
+}
