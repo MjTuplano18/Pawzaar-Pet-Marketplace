@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { getMyPets, deletePet } from '@/lib/pets'
 import { formatPrice } from '@/lib/format'
 import { speciesMeta } from '@/lib/species'
@@ -60,22 +61,28 @@ export function DashboardPage() {
     queryFn: () => getMyPets(page, 12),
   })
 
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deletePet(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myPets'] })
       queryClient.invalidateQueries({ queryKey: ['pets'] })
       notify.success('Listing deleted')
+      setPendingDeleteId(null)
     },
     onError: () => {
-      notify.error('Delete failed')
+      notify.error('Delete failed', 'Could not delete the listing.')
+      setPendingDeleteId(null)
     },
   })
 
   function handleDelete(id: string) {
-    if (window.confirm('Delete this listing? This cannot be undone.')) {
-      deleteMutation.mutate(id)
-    }
+    setPendingDeleteId(id)
+  }
+
+  function confirmDelete() {
+    if (pendingDeleteId) deleteMutation.mutate(pendingDeleteId)
   }
 
   return (
@@ -119,6 +126,17 @@ export function DashboardPage() {
           <Button variant="outline" size="sm" disabled={page >= data.totalPages - 1} onClick={() => setPage(p => p + 1)}>Next</Button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(open) => { if (!open) setPendingDeleteId(null) }}
+        title="Delete this listing?"
+        description="The listing and its photos will be permanently removed from your dashboard and from public search. This cannot be undone."
+        confirmLabel="Delete listing"
+        destructive
+        pending={deleteMutation.isPending}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }
