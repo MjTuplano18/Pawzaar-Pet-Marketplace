@@ -77,7 +77,7 @@ export function Layout() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-        <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-3 px-4">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4">
           <div className="flex items-center gap-2">
             <Link to="/" className="flex items-center gap-2">
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
@@ -204,12 +204,12 @@ export function Layout() {
         )}
       </header>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8">
         <Outlet />
       </main>
 
       <footer className="border-t">
-        <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 px-4 py-6 text-center md:h-16 md:flex-row md:justify-between md:py-0 md:text-left">
+        <div className="mx-auto flex max-w-7xl flex-col items-center gap-3 px-4 py-6 text-center md:h-16 md:flex-row md:justify-between md:py-0 md:text-left">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <PawPrint className="h-4 w-4" />

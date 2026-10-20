@@ -220,7 +220,8 @@ export function PetDetailPage() {
 
   if (isLoading || !pet) {
     return (
-      <div className="grid gap-8 lg:grid-cols-2">
+      <div className="mx-auto max-w-6xl">
+        <div className="grid gap-8 lg:grid-cols-2">
         <div className="space-y-3">
           <Skeleton className="aspect-[4/3] w-full rounded-2xl" />
           <div className="flex gap-2">
@@ -237,8 +238,9 @@ export function PetDetailPage() {
           <Skeleton className="h-24 w-full" />
         </div>
       </div>
-    )
-  }
+    </div>
+  )
+}
 
   const { Icon: SpeciesIcon } = speciesMeta(pet.species)
 
@@ -248,7 +250,7 @@ export function PetDetailPage() {
   )
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-6xl space-y-4">
       <Link
         to="/pets"
         className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground"

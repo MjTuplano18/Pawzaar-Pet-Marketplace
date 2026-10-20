@@ -98,7 +98,7 @@ function PetCardSkeleton() {
 }
 
 function Grid({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
+  return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{children}</div>
 }
 
 const DEFAULT_SORT = 'createdAt'
@@ -297,7 +297,7 @@ export function BrowsePage() {
 
       {/* Grid */}
       {isLoading ? (
-        <Grid>{Array.from({ length: 6 }).map((_, i) => <PetCardSkeleton key={i} />)}</Grid>
+        <Grid>{Array.from({ length: 8 }).map((_, i) => <PetCardSkeleton key={i} />)}</Grid>
       ) : isError ? (
         <div className="py-16 text-center">
           <TriangleAlert className="mx-auto mb-3 h-10 w-10 text-destructive/70" />
