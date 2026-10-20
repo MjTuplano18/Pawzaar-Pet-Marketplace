@@ -89,6 +89,8 @@
   --color-chart-5: var(--chart-5);
   --font-sans: "Nunito", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji";
+  /* Heading/display font — rounded and cute; body stays on Nunito for small-size readability. */
+  --font-display: "Quicksand", ui-sans-serif, system-ui, sans-serif;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -105,4 +107,10 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* One heading font for every h1/h2 in the app (page titles, dialog titles…). */
+h1,
+h2 {
+  font-family: var(--font-display);
 }

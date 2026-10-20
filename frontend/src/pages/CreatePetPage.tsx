@@ -101,7 +101,7 @@ export function CreatePetPage() {
     return (
       <div className="mx-auto max-w-xl space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Add Images</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight">Add Images</h1>
           <Button onClick={() => navigate(`/pets/${createdPet.id}`)}>View Listing →</Button>
         </div>
 
@@ -136,7 +136,7 @@ export function CreatePetPage() {
 
   return (
     <div className="mx-auto max-w-xl space-y-6">
-      <h1 className="text-2xl font-bold">List a Pet</h1>
+      <h1 className="text-2xl font-extrabold tracking-tight">List a Pet</h1>
 
       <Card>
         <CardContent className="pt-6">

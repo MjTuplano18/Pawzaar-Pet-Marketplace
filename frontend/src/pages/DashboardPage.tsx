@@ -81,7 +81,7 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">My Listings</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">My Listings</h1>
         <Button asChild>
           <Link to="/pets/new">+ New Listing</Link>
         </Button>

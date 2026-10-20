@@ -81,7 +81,7 @@ export function Layout() {
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
                 <PawPrint className="h-5 w-5" />
               </span>
-              <span className="text-xl font-extrabold tracking-tight">Pawzaar</span>
+              <span className="font-display text-xl font-extrabold tracking-tight">Pawzaar</span>
             </Link>
 
             <nav className="hidden items-center gap-1 md:flex">
@@ -212,7 +212,7 @@ export function Layout() {
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <PawPrint className="h-4 w-4" />
             </span>
-            <span className="font-extrabold tracking-tight">Pawzaar</span>
+            <span className="font-display font-extrabold tracking-tight">Pawzaar</span>
             <span className="hidden text-xs text-muted-foreground sm:inline">
               — a pet marketplace for the Philippines
             </span>

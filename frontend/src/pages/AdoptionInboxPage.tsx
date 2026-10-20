@@ -148,7 +148,7 @@ export function AdoptionInboxPage() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <h1 className="text-2xl font-bold">Adoption Inbox</h1>
+      <h1 className="text-2xl font-extrabold tracking-tight">Adoption Inbox</h1>
 
       <Tabs defaultValue="sent">
         <TabsList>

@@ -140,7 +140,7 @@ export function EditPetPage() {
   return (
     <div className="mx-auto max-w-xl space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Edit Listing</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">Edit Listing</h1>
         <Button variant="outline" onClick={() => navigate(`/pets/${id}`)}>View Listing</Button>
       </div>
 

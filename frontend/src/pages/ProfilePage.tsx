@@ -113,7 +113,7 @@ export function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-2xl font-semibold">Your profile</h1>
+      <h1 className="text-2xl font-extrabold tracking-tight">Your profile</h1>
 
       {notice && (
         <Alert className="border-green-200 bg-green-50 text-green-800">
