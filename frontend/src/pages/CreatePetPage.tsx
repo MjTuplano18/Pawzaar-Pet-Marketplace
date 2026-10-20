@@ -1,16 +1,17 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { CheckCircle2, ImagePlus } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Field } from '@/components/Field'
+import { PhotoUploader } from '@/components/PhotoUploader'
 import { ApiError } from '@/lib/api'
-import { createPet, uploadPetImage, deletePetImage, type CreatePetInput } from '@/lib/pets'
+import { createPet, type CreatePetInput } from '@/lib/pets'
 import type { PetResponse, PetImageResponse } from '@/types'
 import { notify } from '@/lib/notify'
 
@@ -33,8 +34,6 @@ export function CreatePetPage() {
 
   const [createdPet, setCreatedPet] = useState<PetResponse | null>(null)
   const [images, setImages] = useState<PetImageResponse[]>([])
-  const [uploading, setUploading] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -56,7 +55,7 @@ export function CreatePetPage() {
       const pet = await createPet(body)
       setCreatedPet(pet)
       setImages(pet.images)
-      notify.success('Listing created!', 'You can now add images.')
+      notify.success('Listing created!', 'Now add photos so buyers can see it.')
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.detail || err.title)
@@ -71,66 +70,41 @@ export function CreatePetPage() {
     }
   }
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file || !createdPet) return
-    setUploading(true)
-    try {
-      const img = await uploadPetImage(createdPet.id, file)
-      setImages(prev => [...prev, img])
-      notify.success('Image uploaded')
-    } catch {
-      notify.error('Upload failed')
-    } finally {
-      setUploading(false)
-      if (fileRef.current) fileRef.current.value = ''
-    }
-  }
-
-  async function handleDeleteImage(imageId: string) {
-    if (!createdPet) return
-    try {
-      await deletePetImage(createdPet.id, imageId)
-      setImages(prev => prev.filter(i => i.id !== imageId))
-      notify.success('Image deleted')
-    } catch {
-      notify.error('Could not delete image')
-    }
-  }
-
   if (createdPet) {
     return (
       <div className="mx-auto max-w-xl space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-extrabold tracking-tight">Add Images</h1>
-          <Button onClick={() => navigate(`/pets/${createdPet.id}`)}>View Listing →</Button>
+        <div className="space-y-3">
+          <div className="flex items-center gap-4 text-sm">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <CheckCircle2 className="h-4 w-4 text-primary" strokeWidth={2} />
+              Details
+            </span>
+            <span className="h-px flex-1 bg-border" />
+            <span className="flex items-center gap-1.5 font-semibold text-foreground">
+              <ImagePlus className="h-4 w-4 text-primary" />
+              Photos
+            </span>
+          </div>
+          <h1 className="text-2xl font-extrabold tracking-tight">Add photos</h1>
+          <p className="text-muted-foreground">
+            Listings with clear photos sell faster. Buyers see up to 4 photos.
+          </p>
         </div>
 
         <Card>
-          <CardHeader><CardTitle>Photos</CardTitle></CardHeader>
-          <CardContent className="space-y-4">
-            {images.length > 0 && (
-              <div className="flex flex-wrap gap-3">
-                {images.map(img => (
-                  <div key={img.id} className="relative">
-                    <img src={img.url} alt="" className="h-24 w-24 rounded-md object-cover border" />
-                    <button
-                      onClick={() => handleDeleteImage(img.id)}
-                      className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-white text-xs flex items-center justify-center hover:bg-destructive/90"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex items-center gap-3">
-              <Input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} disabled={uploading} className="max-w-xs" />
-              {uploading && <span className="text-sm text-muted-foreground">Uploading…</span>}
-            </div>
-            <p className="text-xs text-muted-foreground">Upload images one at a time. First image becomes the cover.</p>
+          <CardHeader className="pb-2"><CardTitle>{createdPet.title}</CardTitle></CardHeader>
+          <CardContent>
+            <PhotoUploader
+              petId={createdPet.id}
+              images={images}
+              onImagesChange={setImages}
+            />
           </CardContent>
         </Card>
+
+        <Button className="w-full" onClick={() => navigate(`/pets/${createdPet.id}`)}>
+          Finish and preview listing
+        </Button>
       </div>
     )
   }

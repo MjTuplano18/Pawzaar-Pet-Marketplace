@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -6,13 +6,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { Field } from '@/components/Field'
+import { PhotoUploader } from '@/components/PhotoUploader'
 import { ApiError } from '@/lib/api'
-import { getPet, updatePet, uploadPetImage, deletePetImage, type UpdatePetInput } from '@/lib/pets'
+import { getPet, updatePet, type UpdatePetInput } from '@/lib/pets'
 import { useAuth } from '@/auth/auth-context'
 import { notify } from '@/lib/notify'
 import type { PetImageResponse } from '@/types'
@@ -44,8 +44,6 @@ export function EditPetPage() {
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!pet) return
@@ -99,32 +97,9 @@ export function EditPetPage() {
     }
   }
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true)
-    try {
-      const img = await uploadPetImage(id!, file)
-      setImages(prev => [...prev, img])
-      queryClient.invalidateQueries({ queryKey: ['pet', id] })
-      notify.success('Image uploaded')
-    } catch {
-      notify.error('Upload failed')
-    } finally {
-      setUploading(false)
-      if (fileRef.current) fileRef.current.value = ''
-    }
-  }
-
-  async function handleDeleteImage(imageId: string) {
-    try {
-      await deletePetImage(id!, imageId)
-      setImages(prev => prev.filter(i => i.id !== imageId))
-      queryClient.invalidateQueries({ queryKey: ['pet', id] })
-      notify.success('Image deleted')
-    } catch {
-      notify.error('Could not delete image')
-    }
+  function handleImagesChange(next: PetImageResponse[]) {
+    setImages(next)
+    if (id) queryClient.invalidateQueries({ queryKey: ['pet', id] })
   }
 
   if (isLoading) {
@@ -147,27 +122,9 @@ export function EditPetPage() {
 
       {/* Image management */}
       <Card>
-        <CardHeader><CardTitle>Photos</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          {images.length > 0 && (
-            <div className="flex flex-wrap gap-3">
-              {images.map(img => (
-                <div key={img.id} className="relative">
-                  <img src={img.url} alt="" className="h-24 w-24 rounded-md object-cover border" />
-                  <button
-                    onClick={() => handleDeleteImage(img.id)}
-                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-white text-xs flex items-center justify-center hover:bg-destructive/90"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="flex items-center gap-3">
-            <Input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} disabled={uploading} className="max-w-xs" />
-            {uploading && <span className="text-sm text-muted-foreground">Uploading…</span>}
-          </div>
+        <CardHeader className="pb-2"><CardTitle>Photos</CardTitle></CardHeader>
+        <CardContent>
+          <PhotoUploader petId={pet.id} images={images} onImagesChange={handleImagesChange} />
         </CardContent>
       </Card>
 

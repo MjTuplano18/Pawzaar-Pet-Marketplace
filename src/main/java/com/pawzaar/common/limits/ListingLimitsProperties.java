@@ -14,13 +14,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class ListingLimitsProperties {
 
     /**
-     * Maximum number of non-deleted listings one seller may have at once. Soft-deleted (HIDDEN)
-     * listings do not count, so deleting a listing frees the slot.
+     * Maximum number of non-deleted listings one seller may have at once. Manually hidden
+     * listings (the seller archiving them) do not count, so archiving frees the slot.
      */
     private int maxListingsPerUser = 20;
 
-    /** Maximum number of images attached to a single listing. */
-    private int maxImagesPerListing = 10;
+    /** Maximum number of images attached to a single listing (matches the 4-slot photo picker). */
+    private int maxImagesPerListing = 4;
 
     public int getMaxListingsPerUser() {
         return maxListingsPerUser;

@@ -14,6 +14,9 @@ export interface CreatePetInput {
 
 export interface UpdatePetInput extends CreatePetInput { status: string }
 
+/** Photos one listing may hold. Mirrors `pawzaar.limits.max-images-per-listing` (H6). */
+export const MAX_PHOTOS_PER_LISTING = 4
+
 export function listPets(filters: PetFilters = {}): Promise<PagedResponse<PetSummary>> {
   const params = new URLSearchParams()
   Object.entries(filters).forEach(([k, v]) => { if (v !== undefined && v !== '') params.set(k, String(v)) })
