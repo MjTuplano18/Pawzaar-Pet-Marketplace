@@ -83,6 +83,10 @@ export function EditPetPage() {
       queryClient.invalidateQueries({ queryKey: ['pet', id] })
       queryClient.invalidateQueries({ queryKey: ['pets'] })
       notify.success('Listing saved!')
+      // Close the editing task at the artifact: land on the listing itself, which is
+      // what the seller was really changing, and where the "Edit" button lives if
+      // they want back in. Same destination as the create flow's final step.
+      navigate(`/pets/${id}`)
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.detail || err.title)
