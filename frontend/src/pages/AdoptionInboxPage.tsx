@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { PawPrint } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -164,7 +165,7 @@ export function AdoptionInboxPage() {
             <SkeletonCards />
           ) : !sent || sent.length === 0 ? (
             <div className="py-10 text-center text-muted-foreground">
-              <p className="text-3xl mb-2">🐾</p>
+              <PawPrint className="mx-auto mb-3 h-10 w-10 text-primary/50" strokeWidth={1.25} />
               <p>You haven't sent any adoption requests yet.</p>
               <Button asChild variant="link" className="mt-2">
                 <Link to="/pets">Browse pets</Link>

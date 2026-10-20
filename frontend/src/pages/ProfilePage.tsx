@@ -165,8 +165,8 @@ export function ProfilePage() {
                 className="h-20 w-20 rounded-full object-cover border"
               />
             ) : (
-              <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center text-3xl border">
-                🐾
+              <div className="h-20 w-20 rounded-full bg-secondary flex items-center justify-center text-xl font-bold border text-secondary-foreground">
+                {user.displayName.trim().charAt(0).toUpperCase()}
               </div>
             )}
             <div className="space-y-2">

@@ -207,15 +207,18 @@ export function Layout() {
       </main>
 
       <footer className="border-t">
-        <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 px-4 py-8 text-center md:flex-row md:justify-between md:text-left">
+        <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 px-4 py-6 text-center md:h-16 md:flex-row md:justify-between md:py-0 md:text-left">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <PawPrint className="h-4 w-4" />
             </span>
             <span className="font-extrabold tracking-tight">Pawzaar</span>
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              — a pet marketplace for the Philippines
+            </span>
           </div>
           <p className="text-xs text-muted-foreground">
-            A pet marketplace for the Philippines — Spring Boot API + React frontend.
+            © 2026 Pawzaar. All rights reserved.
           </p>
         </div>
       </footer>

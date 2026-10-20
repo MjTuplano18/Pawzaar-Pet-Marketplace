@@ -45,7 +45,7 @@ export function VerifyEmailPage() {
 
           {status === 'success' && (
             <Alert className="border-green-200 bg-green-50 text-green-800">
-              <AlertDescription>Your email is verified. You're all set! 🎉</AlertDescription>
+              <AlertDescription>Your email is verified. You're all set!</AlertDescription>
             </Alert>
           )}
 

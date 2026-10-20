@@ -153,9 +153,9 @@ export function CreatePetPage() {
               <Select value={species} onValueChange={setSpecies}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="DOG">🐶 Dog</SelectItem>
-                  <SelectItem value="CAT">🐱 Cat</SelectItem>
-                  <SelectItem value="OTHER">🐾 Other</SelectItem>
+                  <SelectItem value="DOG">Dog</SelectItem>
+                  <SelectItem value="CAT">Cat</SelectItem>
+                  <SelectItem value="OTHER">Other</SelectItem>
                 </SelectContent>
               </Select>
               {fieldErrors.species && <p className="text-xs text-destructive">{fieldErrors.species}</p>}

@@ -1,10 +1,9 @@
-import { ArrowRight, HeartHandshake, Image, Search, Sparkles } from 'lucide-react'
+import { ArrowRight, HeartHandshake, Image, Search } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { listPets } from '@/lib/pets'
 import { useAuth } from '../auth/auth-context'
@@ -35,7 +34,7 @@ function FeatureCard({
 export function HomePage() {
   const { status } = useAuth()
 
-  // Real number of live listings from the API — keeps the hero honest as data grows.
+  // Real number of active listings from the API — keeps the hero factual as data grows.
   const { data } = useQuery({
     queryKey: ['pets', 'home-count'],
     queryFn: () => listPets({ page: 0, size: 1 }),
@@ -48,19 +47,23 @@ export function HomePage() {
       {/* Hero */}
       <section className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-amber-100/80 via-orange-50/60 to-rose-100/50 px-6 py-14 text-center dark:from-amber-950/40 dark:via-orange-950/25 dark:to-rose-950/20">
         <div className="mx-auto max-w-2xl space-y-6">
-          <Badge variant="secondary" className="gap-1.5 px-3 py-1 text-xs">
-            <Sparkles className="h-3.5 w-3.5 text-primary" />
-            {listingCount != null
-              ? `${listingCount} ${listingCount === 1 ? 'pet is' : 'pets are'} looking for a home`
-              : 'Pets are looking for a home'}
-          </Badge>
+          {listingCount != null && (
+            <p className="inline-flex items-center gap-2 rounded-full border bg-background/80 px-3 py-1 text-xs font-semibold text-muted-foreground">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              </span>
+              {listingCount} active {listingCount === 1 ? 'listing' : 'listings'}
+            </p>
+          )}
 
           <h1 className="text-4xl font-extrabold leading-tight tracking-tight md:text-5xl">
-            Find your next best friend in the Philippines
+            Buy and sell pets across the Philippines
           </h1>
           <p className="text-lg leading-relaxed text-muted-foreground">
-            Pawzaar is a pet marketplace where sellers post real listings with photos, and adopters
-            reach out directly. Every listing you see is served live from the Pawzaar API.
+            Browse listings from sellers nationwide, filter by species, price, and location, and
+            send an adoption request when you find the right match. Listing a pet takes minutes:
+            add photos, set a price, and publish.
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-3">
@@ -88,24 +91,24 @@ export function HomePage() {
         <div className="text-center">
           <h2 className="text-2xl font-extrabold tracking-tight">How Pawzaar works</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Three steps from browsing to a new best friend.
+            From browsing to bringing your pet home, in three steps.
           </p>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           <FeatureCard
             Icon={Search}
-            title="Browse real listings"
-            description="Filter by species, price and location. Every card links to a full pet page with photos and details."
+            title="Browse listings"
+            description="Filter by species, breed, price, and location to see what's available near you."
           />
           <FeatureCard
             Icon={Image}
-            title="Sell with photos"
-            description="List a pet in minutes — upload multiple photos, set location and price, and manage it from your dashboard."
+            title="Sell your pet"
+            description="Create a listing with photos, set your price, and manage it from your dashboard."
           />
           <FeatureCard
             Icon={HeartHandshake}
-            title="Adopt through requests"
-            description="Found your match? Send the seller an adoption request and track its status in your inbox."
+            title="Send an adoption request"
+            description="Message the seller with your details, and track the request's status as it's reviewed."
           />
         </div>
       </section>
