@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Field } from '../components/Field'
 import { useAuth } from '../auth/auth-context'
 import { ApiError } from '../lib/api'
+import { notify } from '../lib/notify'
 
 export function RegisterPage() {
   const { register } = useAuth()
@@ -33,6 +34,7 @@ export function RegisterPage() {
         displayName: displayName.trim(),
         phone: phone.trim() ? phone.trim() : undefined,
       })
+      notify.success('Account created', 'Check your email for the verification link.')
       setDone(true)
     } catch (err) {
       if (err instanceof ApiError) {

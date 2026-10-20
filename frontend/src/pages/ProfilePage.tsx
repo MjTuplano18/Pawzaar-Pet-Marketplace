@@ -10,7 +10,7 @@ import { useAuth } from '../auth/auth-context'
 import { resendVerification } from '../lib/auth'
 import { ApiError } from '../lib/api'
 import { updateProfile, uploadAvatar, deleteAvatar } from '../lib/profile'
-import { toast } from '@/hooks/use-toast'
+import { notify } from '@/lib/notify'
 
 export function ProfilePage() {
   const { user, logout, reloadUser } = useAuth()
@@ -68,15 +68,15 @@ export function ProfilePage() {
         bio: bio.trim() || undefined,
       })
       await reloadUser()
-      toast({ title: 'Profile saved!' })
+      notify.success('Profile saved!')
     } catch (err) {
       if (err instanceof ApiError) {
         const next: Record<string, string> = {}
         for (const fe of err.fieldErrors) next[fe.field] = fe.message
         setProfileFieldErrors(next)
-        toast({ title: err.detail || err.title, variant: 'destructive' })
+        notify.error(err.detail || err.title)
       } else {
-        toast({ title: 'Could not save profile.', variant: 'destructive' })
+        notify.error('Could not save profile.')
       }
     } finally {
       setProfileSaving(false)
@@ -91,9 +91,9 @@ export function ProfilePage() {
       await uploadAvatar(file)
       await reloadUser()
       setAvatarKey(k => k + 1)
-      toast({ title: 'Avatar updated!' })
+      notify.success('Avatar updated!')
     } catch {
-      toast({ title: 'Upload failed', variant: 'destructive' })
+      notify.error('Upload failed', 'Could not upload your avatar.')
     } finally {
       setAvatarUploading(false)
       if (avatarFileRef.current) avatarFileRef.current.value = ''
@@ -105,9 +105,9 @@ export function ProfilePage() {
       await deleteAvatar()
       await reloadUser()
       setAvatarKey(k => k + 1)
-      toast({ title: 'Avatar removed' })
+      notify.success('Avatar removed')
     } catch {
-      toast({ title: 'Could not remove avatar', variant: 'destructive' })
+      notify.error('Could not remove avatar')
     }
   }
 

@@ -27,7 +27,7 @@ import {
   updateAdoptionStatus,
   getMyRequests,
 } from '@/lib/adoptions'
-import { toast } from '@/hooks/use-toast'
+import { notify } from '@/lib/notify'
 import type { AdoptionRequestResponse, AdoptionStatus, PetImageResponse } from '@/types'
 
 const ADOPTION_STATUS_VARIANT: Record<
@@ -168,16 +168,12 @@ export function PetDetailPage() {
     mutationFn: () => deletePet(id!),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pets'] })
-      toast({ title: 'Listing deleted' })
+      notify.success('Listing deleted')
       navigate('/dashboard')
     },
     onError: () => {
       setConfirmDeleteOpen(false)
-      toast({
-        title: 'Delete failed',
-        description: 'Could not delete this listing.',
-        variant: 'destructive',
-      })
+      notify.error('Delete failed', 'Could not delete this listing.')
     },
   })
 
@@ -187,11 +183,11 @@ export function PetDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['myAdoptionRequests'] })
       setAdoptDialogOpen(false)
       setMessage('')
-      toast({ title: 'Request sent!', description: 'The seller will review your request.' })
+      notify.success('Request sent!', 'The seller will review your request.')
     },
     onError: (err: unknown) => {
       const detail = err instanceof Error ? err.message : 'Could not send your adoption request.'
-      toast({ title: 'Request failed', description: detail, variant: 'destructive' })
+      notify.error('Request failed', detail)
     },
   })
 
@@ -200,10 +196,10 @@ export function PetDetailPage() {
       updateAdoptionStatus(reqId, status),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['petAdoptionRequests', id] })
-      toast({ title: 'Status updated' })
+      notify.success('Status updated')
     },
     onError: () => {
-      toast({ title: 'Update failed', variant: 'destructive' })
+      notify.error('Status update failed')
     },
   })
 

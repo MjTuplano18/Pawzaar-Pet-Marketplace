@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getMyRequests, getReceivedRequests, updateAdoptionStatus } from '@/lib/adoptions'
-import { toast } from '@/hooks/use-toast'
+import { notify } from '@/lib/notify'
 import type { AdoptionRequestResponse, AdoptionStatus } from '@/types'
 
 /** Badge variant per adoption status. */
@@ -135,10 +135,10 @@ export function AdoptionInboxPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myAdoptionRequests'] })
       queryClient.invalidateQueries({ queryKey: ['receivedAdoptionRequests'] })
-      toast({ title: 'Status updated' })
+      notify.success('Status updated')
     },
     onError: () => {
-      toast({ title: 'Update failed', variant: 'destructive' })
+      notify.error('Status update failed')
     },
   })
 

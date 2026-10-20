@@ -6,6 +6,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { cn } from '@/lib/utils'
+import { notify } from '@/lib/notify'
 import { useAuth } from '../auth/auth-context'
 
 function initialsOf(displayName: string): string {
@@ -57,6 +58,7 @@ export function Layout() {
     await logout()
     setMenuOpen(false)
     navigate('/')
+    notify.success('Signed out')
   }
 
   /** Every route in the mobile menu; tapping one closes the panel. */

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Field } from '../components/Field'
 import { useAuth } from '../auth/auth-context'
 import { ApiError } from '../lib/api'
+import { notify } from '../lib/notify'
 
 export function LoginPage() {
   const { login } = useAuth()
@@ -26,6 +27,7 @@ export function LoginPage() {
     setSubmitting(true)
     try {
       await login(email.trim(), password)
+      notify.success('Welcome back!')
       navigate(from, { replace: true })
     } catch (err) {
       setError(

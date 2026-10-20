@@ -12,7 +12,7 @@ import { Field } from '@/components/Field'
 import { ApiError } from '@/lib/api'
 import { createPet, uploadPetImage, deletePetImage, type CreatePetInput } from '@/lib/pets'
 import type { PetResponse, PetImageResponse } from '@/types'
-import { toast } from '@/hooks/use-toast'
+import { notify } from '@/lib/notify'
 
 export function CreatePetPage() {
   const navigate = useNavigate()
@@ -56,7 +56,7 @@ export function CreatePetPage() {
       const pet = await createPet(body)
       setCreatedPet(pet)
       setImages(pet.images)
-      toast({ title: 'Listing created!', description: 'You can now add images.' })
+      notify.success('Listing created!', 'You can now add images.')
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.detail || err.title)
@@ -78,9 +78,9 @@ export function CreatePetPage() {
     try {
       const img = await uploadPetImage(createdPet.id, file)
       setImages(prev => [...prev, img])
-      toast({ title: 'Image uploaded' })
+      notify.success('Image uploaded')
     } catch {
-      toast({ title: 'Upload failed', variant: 'destructive' })
+      notify.error('Upload failed')
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -92,8 +92,9 @@ export function CreatePetPage() {
     try {
       await deletePetImage(createdPet.id, imageId)
       setImages(prev => prev.filter(i => i.id !== imageId))
+      notify.success('Image deleted')
     } catch {
-      toast({ title: 'Could not delete image', variant: 'destructive' })
+      notify.error('Could not delete image')
     }
   }
 

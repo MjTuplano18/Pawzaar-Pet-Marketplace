@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { getMyPets, deletePet } from '@/lib/pets'
 import { formatPrice } from '@/lib/format'
 import { speciesMeta } from '@/lib/species'
-import { toast } from '@/hooks/use-toast'
+import { notify } from '@/lib/notify'
 import type { PetSummary } from '@/types'
 
 const STATUS_VARIANT: Record<string, 'success' | 'default' | 'secondary' | 'warning'> = {
@@ -65,10 +65,10 @@ export function DashboardPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myPets'] })
       queryClient.invalidateQueries({ queryKey: ['pets'] })
-      toast({ title: 'Listing deleted' })
+      notify.success('Listing deleted')
     },
     onError: () => {
-      toast({ title: 'Delete failed', variant: 'destructive' })
+      notify.error('Delete failed')
     },
   })
 

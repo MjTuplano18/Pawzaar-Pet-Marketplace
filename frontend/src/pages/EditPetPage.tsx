@@ -14,7 +14,7 @@ import { Field } from '@/components/Field'
 import { ApiError } from '@/lib/api'
 import { getPet, updatePet, uploadPetImage, deletePetImage, type UpdatePetInput } from '@/lib/pets'
 import { useAuth } from '@/auth/auth-context'
-import { toast } from '@/hooks/use-toast'
+import { notify } from '@/lib/notify'
 import type { PetImageResponse } from '@/types'
 
 export function EditPetPage() {
@@ -84,7 +84,7 @@ export function EditPetPage() {
       await updatePet(id!, body)
       queryClient.invalidateQueries({ queryKey: ['pet', id] })
       queryClient.invalidateQueries({ queryKey: ['pets'] })
-      toast({ title: 'Listing saved!' })
+      notify.success('Listing saved!')
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.detail || err.title)
@@ -107,9 +107,9 @@ export function EditPetPage() {
       const img = await uploadPetImage(id!, file)
       setImages(prev => [...prev, img])
       queryClient.invalidateQueries({ queryKey: ['pet', id] })
-      toast({ title: 'Image uploaded' })
+      notify.success('Image uploaded')
     } catch {
-      toast({ title: 'Upload failed', variant: 'destructive' })
+      notify.error('Upload failed')
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
@@ -121,8 +121,9 @@ export function EditPetPage() {
       await deletePetImage(id!, imageId)
       setImages(prev => prev.filter(i => i.id !== imageId))
       queryClient.invalidateQueries({ queryKey: ['pet', id] })
+      notify.success('Image deleted')
     } catch {
-      toast({ title: 'Could not delete image', variant: 'destructive' })
+      notify.error('Could not delete image')
     }
   }
 
