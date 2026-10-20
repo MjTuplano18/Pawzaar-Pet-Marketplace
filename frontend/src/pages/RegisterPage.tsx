@@ -55,16 +55,14 @@ export function RegisterPage() {
       <div className="mx-auto mt-10 w-full max-w-sm">
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">Check your email 📬</CardTitle>
+            <CardTitle className="text-2xl">Check your email</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <p>
               Your account was created. We sent a verification link to <strong>{email.trim()}</strong>.
             </p>
             <p className="text-muted-foreground">
-              In local development nothing is actually delivered — the link is printed in the API
-              console (run the <code className="bg-muted px-1 rounded">dev</code> profile with{' '}
-              <code className="bg-muted px-1 rounded">pawzaar.email.log-body=true</code>).
+              No email yet? Check your spam folder, or try registering again in a few minutes.
             </p>
           </CardContent>
           <CardFooter>

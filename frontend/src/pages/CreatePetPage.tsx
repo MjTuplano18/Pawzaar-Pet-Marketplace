@@ -111,7 +111,7 @@ export function CreatePetPage() {
 
   return (
     <div className="mx-auto max-w-xl space-y-6">
-      <h1 className="text-2xl font-extrabold tracking-tight">List a Pet</h1>
+      <h1 className="text-2xl font-extrabold tracking-tight">List a pet</h1>
 
       <Card>
         <CardContent className="pt-6">

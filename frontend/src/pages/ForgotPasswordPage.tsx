@@ -38,7 +38,7 @@ export function ForgotPasswordPage() {
       <div className="mx-auto mt-10 w-full max-w-sm">
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">Check your email 📬</CardTitle>
+            <CardTitle className="text-2xl">Check your email</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <p>
@@ -46,8 +46,7 @@ export function ForgotPasswordPage() {
               your password.
             </p>
             <p className="text-muted-foreground">
-              The link expires in 1 hour. In local development it is printed in the API console
-              instead of being delivered.
+              The link expires in 1 hour.
             </p>
           </CardContent>
           <CardFooter>

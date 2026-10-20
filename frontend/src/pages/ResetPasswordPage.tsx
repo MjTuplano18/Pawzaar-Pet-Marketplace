@@ -84,7 +84,7 @@ export function ResetPasswordPage() {
       <div className="mx-auto mt-10 w-full max-w-sm">
         <Card>
           <CardHeader>
-            <CardTitle className="text-2xl">Password updated ✅</CardTitle>
+            <CardTitle className="text-2xl">Password updated</CardTitle>
           </CardHeader>
           <CardContent className="text-sm">
             <p>

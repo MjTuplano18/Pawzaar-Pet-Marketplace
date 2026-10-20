@@ -24,7 +24,7 @@ function FeatureCard({
         <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
           <Icon className="h-5 w-5" />
         </span>
-        <p className="font-display font-bold">{title}</p>
+        <p className="font-display font-semibold">{title}</p>
         <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>
       </CardContent>
     </Card>

@@ -112,7 +112,7 @@ export function Layout() {
                 <Link
                   to="/profile"
                   aria-label="Your profile"
-                  className="hidden h-9 w-9 items-center justify-center overflow-hidden rounded-full border bg-secondary text-xs font-bold text-secondary-foreground md:flex"
+                  className="hidden h-9 w-9 items-center justify-center overflow-hidden rounded-full border bg-secondary text-xs font-semibold text-secondary-foreground md:flex"
                 >
                   {user.avatarUrl ? (
                     <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" />

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { PawPrint } from 'lucide-react'
+import { PawPrint, Plus } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -40,7 +40,7 @@ function MyPetCard({ pet, onDelete }: { pet: PetSummary; onDelete: (id: string) 
       </div>
       <CardContent className="p-3 space-y-2">
         <p className="font-semibold truncate">{pet.title}</p>
-        <p className="text-sm font-bold text-primary">{formatPrice(pet.price)}</p>
+        <p className="text-sm font-semibold text-primary">{formatPrice(pet.price)}</p>
         <p className="text-xs text-muted-foreground">{pet.city}, {pet.province}</p>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => navigate(`/pets/${pet.id}/edit`)}>Edit</Button>
@@ -88,9 +88,12 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-extrabold tracking-tight">My Listings</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight">My listings</h1>
         <Button asChild>
-          <Link to="/pets/new">+ New Listing</Link>
+          <Link to="/pets/new">
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            New listing
+          </Link>
         </Button>
       </div>
 
@@ -106,7 +109,7 @@ export function DashboardPage() {
       ) : !data || data.content.length === 0 ? (
         <div className="py-16 text-center text-muted-foreground">
           <PawPrint className="mx-auto mb-3 h-12 w-12 text-primary/50" strokeWidth={1.25} />
-          <p className="text-lg font-medium">You haven't listed any pets yet</p>
+          <p className="text-lg font-semibold">You haven't listed any pets yet</p>
           <Button asChild className="mt-4">
             <Link to="/pets/new">List your first pet</Link>
           </Button>

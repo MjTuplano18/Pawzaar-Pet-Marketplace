@@ -4,6 +4,7 @@ import { PawPrint } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Inbox } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getMyRequests, getReceivedRequests, updateAdoptionStatus } from '@/lib/adoptions'
@@ -148,7 +149,7 @@ export function AdoptionInboxPage() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <h1 className="text-2xl font-extrabold tracking-tight">Adoption Inbox</h1>
+      <h1 className="text-2xl font-extrabold tracking-tight">Adoption inbox</h1>
 
       <Tabs defaultValue="sent">
         <TabsList>
@@ -189,7 +190,7 @@ export function AdoptionInboxPage() {
             <SkeletonCards />
           ) : !received || received.length === 0 ? (
             <div className="py-10 text-center text-muted-foreground">
-              <p className="text-3xl mb-2">📬</p>
+              <Inbox className="mx-auto mb-3 h-10 w-10 text-primary/50" strokeWidth={1.25} />
               <p>No adoption requests received yet.</p>
             </div>
           ) : (

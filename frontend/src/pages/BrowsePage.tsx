@@ -48,7 +48,7 @@ function PetCard({ pet }: { pet: PetSummary }) {
         )}
 
         {pet.status === 'SOLD' && (
-          <span className="absolute left-2.5 top-2.5 rounded-full bg-foreground/85 px-2.5 py-0.5 text-[11px] font-bold text-background">
+          <span className="absolute left-2.5 top-2.5 rounded-full bg-foreground/85 px-2.5 py-0.5 text-[11px] font-semibold text-background">
             SOLD
           </span>
         )}
@@ -253,7 +253,7 @@ export function BrowsePage() {
       {/* Filter bar */}
       <div className="rounded-xl border bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-bold">Filters</p>
+          <p className="text-sm font-semibold">Filters</p>
           {hasActiveFilters && (
             <Button variant="ghost" size="sm" className="h-7 px-2" onClick={clearFilters}>
               Clear filters
@@ -301,9 +301,9 @@ export function BrowsePage() {
       ) : isError ? (
         <div className="py-16 text-center">
           <TriangleAlert className="mx-auto mb-3 h-10 w-10 text-destructive/70" />
-          <p className="font-bold">Couldn't load listings</p>
+          <p className="text-lg font-semibold">Couldn't load listings</p>
           <p className="mb-4 text-sm text-muted-foreground">
-            The API didn't respond. Check that it's running, then retry.
+            Something went wrong while loading listings. Check your connection, then try again.
           </p>
           <Button variant="outline" onClick={() => refetch()}>
             Try again
@@ -316,7 +316,7 @@ export function BrowsePage() {
           <span className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
             <PawPrint className="h-8 w-8 text-primary/70" />
           </span>
-          <p className="font-bold">No pets found</p>
+          <p className="text-lg font-semibold">No pets found</p>
           <p className="text-sm text-muted-foreground">Nothing matches these filters yet.</p>
           {hasActiveFilters && (
             <Button variant="outline" size="sm" className="mt-4" onClick={clearFilters}>

@@ -51,7 +51,7 @@ function AdoptionRequestCard({
   return (
     <div className="rounded-xl border p-3.5 space-y-2 transition-colors hover:bg-accent/40">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-bold">{req.requesterDisplayName}</p>
+        <p className="text-sm font-semibold">{req.requesterDisplayName}</p>
         <Badge variant={ADOPTION_STATUS_VARIANT[req.status]}>{req.status}</Badge>
       </div>
       {req.message && (
@@ -207,7 +207,7 @@ export function PetDetailPage() {
     return (
       <div className="py-16 text-center">
         <PawPrint className="mx-auto mb-4 h-14 w-14 text-primary/40" strokeWidth={1.25} />
-        <p className="font-bold">Listing not found</p>
+        <p className="text-lg font-semibold">Listing not found</p>
         <p className="mb-4 text-sm text-muted-foreground">
           This listing doesn't exist or was removed.
         </p>
@@ -282,7 +282,7 @@ export function PetDetailPage() {
 
           {pet.description && (
             <div className="rounded-xl border bg-card p-4">
-              <p className="mb-1.5 text-sm font-bold">About</p>
+              <p className="mb-1.5 text-sm font-semibold">About</p>
               <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
                 {pet.description}
               </p>
@@ -294,7 +294,7 @@ export function PetDetailPage() {
               <SpeciesIcon className="h-5 w-5 text-primary" />
             </span>
             <div className="min-w-0">
-              <p className="text-sm font-bold">Listed on Pawzaar</p>
+              <p className="text-sm font-semibold">Listed on Pawzaar</p>
               <p className="text-xs text-muted-foreground">
                 Posted {formatRelativeTime(pet.createdAt)} · Updated {formatRelativeTime(pet.updatedAt)}
               </p>
