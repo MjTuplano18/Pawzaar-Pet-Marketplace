@@ -52,7 +52,7 @@ import static org.mockito.Mockito.*;
  *   <li>createPet stores the correct sellerId</li>
  *   <li>updatePet enforces ownership (user A cannot update user B's listing)</li>
  *   <li>updatePet rejects the admin-only PENDING_REVIEW status</li>
- *   <li>deletePet soft-deletes (HIDDEN) and enforces ownership</li>
+ *   <li>deletePet hard-deletes (row removed, storage cleanup scheduled) and enforces ownership</li>
  * </ul>
  */
 @ExtendWith(MockitoExtension.class)
@@ -66,6 +66,9 @@ class PetServiceTest {
 
     @Mock
     private PetImageRepository petImageRepository;
+
+    @Mock
+    private PetImageService petImageService;
 
     // A real instance (with its defaults) so unrelated tests need no stubbing; individual tests
     // override the cap when they are specifically about the quota (H6).
@@ -328,17 +331,17 @@ class PetServiceTest {
     // ── deletePet ──────────────────────────────────────────────────────────────
 
     @Test
-    void deletePetByOwnerSoftDeletesListing() {
+    void deletePetByOwnerRemovesTheListing() {
         Pet existing = petWithId(OWNER_ID, PET_ID);
         when(petRepository.findById(PET_ID)).thenReturn(Optional.of(existing));
-        when(petRepository.save(existing)).thenReturn(existing);
 
         petService.deletePet(PET_ID, OWNER_ID);
 
-        // Soft-delete: status changed to HIDDEN, not a physical DELETE.
-        assertEquals(PetStatus.HIDDEN, existing.getStatus());
-        verify(petRepository).save(existing);
-        verify(petRepository, never()).deleteById(any());
+        // Hard delete: the row goes. Image rows and adoption requests follow through
+        // ON DELETE CASCADE; the stored files are cleaned up by the image service.
+        verify(petImageService).deleteStorageFilesForPet(PET_ID);
+        verify(petRepository).delete(existing);
+        verify(petRepository, never()).save(any());
     }
 
     @Test
@@ -349,7 +352,10 @@ class PetServiceTest {
         assertThrows(ForbiddenPetAccessException.class,
                 () -> petService.deletePet(PET_ID, OTHER_ID));
 
+        // The ownership guard runs before anything is touched or scheduled.
+        verify(petImageService, never()).deleteStorageFilesForPet(any());
         verify(petRepository, never()).save(any());
+        verify(petRepository, never()).delete(any(Pet.class));
     }
 
     // ── helpers ────────────────────────────────────────────────────────────────

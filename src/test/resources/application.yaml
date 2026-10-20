@@ -4,8 +4,16 @@
 spring:
   # DataJpaTest replaces the datasource with a test DB, but WebMvcTest slices
   # do not start a datasource at all - this block is only used by SpringBootTest.
+  #
+  # Dedicated test database, sharing the dev Postgres instance. Tests must NEVER
+  # run against `pawzaar` itself: that database is the live dev data the app writes
+  # to, and count-based repository tests would break as soon as the dev content
+  # changes. With an isolated database (created once via
+  #   CREATE DATABASE pawzaar_test OWNER pawzaar;)
+  # Flyway applies the V-series in strict order there, exactly like production,
+  # and the V100 dev seed never leaks into test data.
   datasource:
-    url: jdbc:postgresql://localhost:5433/pawzaar
+    url: jdbc:postgresql://localhost:5433/pawzaar_test
     username: pawzaar
     password: pawzaar_dev
 

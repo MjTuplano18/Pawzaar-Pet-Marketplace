@@ -29,9 +29,11 @@ import java.util.UUID;
 /**
  * Upload, delete and serve the images attached to a listing.
  *
- * <p>Separate from {@link PetService} so the CRUD of a listing does not drag in storage concerns.
- * This service owns the two-sided write: a file on disk AND a row in the database. That pairing is
- * exactly what makes it worth its own class - it is the only place that has to keep the two in sync.
+ * <p>Separate from {@link PetService} so the day-to-day CRUD of a listing does not drag in
+ * storage concerns; only the permanent listing delete consults this service (file cleanup).
+ * This service owns the two-sided write: a file on disk AND a row in the database. That
+ * pairing is exactly what makes it worth its own class - it is the only place that has to
+ * keep the two in sync.
  *
  * <p>Authorization reuses {@link PetService#checkOwnership}: only the seller who owns the listing may
  * add or remove its images. The public read path additionally hides images of non-ACTIVE listings.
@@ -156,6 +158,21 @@ public class PetImageService {
      * asking about a non-ACTIVE listing gets the same 404 as if the image did not exist - no leak.
      */
     @Transactional(readOnly = true)
+    /**
+     * Deletes every stored image FILE of a listing after the current transaction commits.
+     *
+     * <p>Called when the listing itself is permanently deleted. The image ROWS disappear
+     * through the ON DELETE CASCADE on pet_images.pet_id, but the stored bytes are not rows
+     * - a database cascade cannot touch files - so they must be removed explicitly. Same H5
+     * pattern as the single-image delete: only irreversible file deletes after a real commit.
+     */
+    public void deleteStorageFilesForPet(UUID petId) {
+        for (PetImage image : petImageRepository.findByPetIdOrderBySortOrderAsc(petId)) {
+            String storageKey = image.getStorageKey();
+            StorageCleanup.afterCommit(() -> deleteQuietly(storageKey));
+        }
+    }
+
     public ServedImage load(UUID petId, UUID imageId, UUID callerIdOrNull) {
         PetImage image = petImageRepository.findByIdAndPetId(imageId, petId)
                 .orElseThrow(() -> new PetImageNotFoundException(imageId));

@@ -49,15 +49,18 @@ public class PetService {
     private final PetImageRepository petImageRepository;
     private final UserRepository userRepository;
     private final ListingLimitsProperties limits;
+    private final PetImageService petImageService;
 
     public PetService(PetRepository petRepository,
                       PetImageRepository petImageRepository,
                       UserRepository userRepository,
-                      ListingLimitsProperties limits) {
+                      ListingLimitsProperties limits,
+                      PetImageService petImageService) {
         this.petRepository = petRepository;
         this.petImageRepository = petImageRepository;
         this.userRepository = userRepository;
         this.limits = limits;
+        this.petImageService = petImageService;
     }
 
     // ── READ ─────────────────────────────────────────────────────────────────────────────────
@@ -109,8 +112,8 @@ public class PetService {
     /** Creates a new listing owned by {@code sellerId}. */
     @Transactional
     public PetResponse createPet(UUID sellerId, PetCreateRequest request) {
-        // H6: a per-account cap stops one seller from filling the marketplace. Soft-deleted
-        // (HIDDEN) listings do not count, so deleting a listing frees the slot.
+        // H6: a per-account cap stops one seller from filling the marketplace. Manually
+        // hidden listings (the seller archiving them) do not count, so archiving frees the slot.
         long existing = petRepository.countBySellerIdAndStatusNot(sellerId, PetStatus.HIDDEN);
         if (existing >= limits.getMaxListingsPerUser()) {
             throw new QuotaExceededException("listings", limits.getMaxListingsPerUser());
@@ -181,8 +184,10 @@ public class PetService {
     }
 
     /**
-     * Soft-deletes by setting status to HIDDEN. The row stays in the database so order
-     * history and references remain intact. A future admin endpoint can hard-delete.
+     * Permanently deletes a listing. The pet row, its image rows and its adoption requests
+     * all disappear through ON DELETE CASCADE (adoption_requests V15, pet_images V7); the
+     * stored image FILES are removed after the commit - files are not rows, so a cascade
+     * cannot reach them (see {@link PetImageService#deleteStorageFilesForPet}).
      *
      * @throws PetNotFoundException      if the id does not exist
      * @throws ForbiddenPetAccessException if the caller does not own the listing
@@ -194,8 +199,8 @@ public class PetService {
 
         checkOwnership(pet, callerId);
 
-        pet.setStatus(PetStatus.HIDDEN);
-        petRepository.save(pet);
+        petImageService.deleteStorageFilesForPet(id);
+        petRepository.delete(pet);
     }
 
     // ── HELPERS ──────────────────────────────────────────────────────────────────────────────
