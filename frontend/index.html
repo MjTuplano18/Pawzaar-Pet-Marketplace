@@ -9,6 +9,29 @@
       content="Pawzaar — a pet marketplace for the Philippines."
     />
     <title>Pawzaar — Pet Marketplace</title>
+
+    <!-- Warm, rounded brand font. Loaded before first paint to avoid a flash of system font. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400..900;1,400..900&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Apply the saved (or system) theme before React mounts so a dark page never flashes light. -->
+    <script>
+      ;(function () {
+        try {
+          var stored = localStorage.getItem('pawzaar.theme')
+          var dark = stored
+            ? stored === 'dark'
+            : window.matchMedia('(prefers-color-scheme: dark)').matches
+          if (dark) document.documentElement.classList.add('dark')
+        } catch (e) {
+          /* no storage access (private mode) — fall back to light until the toggle runs */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

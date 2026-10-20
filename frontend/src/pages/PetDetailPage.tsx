@@ -1,3 +1,4 @@
+import { Heart, MapPin, NotebookPen, PawPrint, Pencil, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -6,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import {
   Dialog,
   DialogContent,
@@ -16,6 +18,8 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { useAuth } from '@/auth/auth-context'
+import { formatAge, formatPrice, formatRelativeTime, formatSex } from '@/lib/format'
+import { speciesMeta } from '@/lib/species'
 import { getPet, deletePet } from '@/lib/pets'
 import {
   createAdoptionRequest,
@@ -24,21 +28,7 @@ import {
   getMyRequests,
 } from '@/lib/adoptions'
 import { toast } from '@/hooks/use-toast'
-import type { AdoptionRequestResponse, AdoptionStatus } from '@/types'
-
-const SPECIES_ICON: Record<string, string> = { DOG: '🐶', CAT: '🐱', OTHER: '🐾' }
-
-function formatAge(months: number): string {
-  if (months < 1) return '< 1 month'
-  if (months < 12) return `${months} month${months === 1 ? '' : 's'}`
-  const years = Math.floor(months / 12)
-  const rem = months % 12
-  return rem > 0 ? `${years} yr ${rem} mo` : `${years} year${years === 1 ? '' : 's'}`
-}
-
-function formatPrice(price: string): string {
-  return `₱${Number(price).toLocaleString('en-PH')}`
-}
+import type { AdoptionRequestResponse, AdoptionStatus, PetImageResponse } from '@/types'
 
 const ADOPTION_STATUS_VARIANT: Record<
   AdoptionStatus,
@@ -59,29 +49,83 @@ function AdoptionRequestCard({
   onAction: (id: string, status: AdoptionStatus) => void
 }) {
   return (
-    <div className="rounded-lg border p-3 space-y-2">
+    <div className="rounded-xl border p-3.5 space-y-2 transition-colors hover:bg-accent/40">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium">{req.requesterDisplayName}</p>
+        <p className="text-sm font-bold">{req.requesterDisplayName}</p>
         <Badge variant={ADOPTION_STATUS_VARIANT[req.status]}>{req.status}</Badge>
       </div>
       {req.message && (
-        <p className="text-sm text-muted-foreground line-clamp-2">{req.message}</p>
+        <p className="text-sm leading-relaxed text-muted-foreground line-clamp-2">{req.message}</p>
       )}
       <p className="text-xs text-muted-foreground">
-        {new Date(req.createdAt).toLocaleDateString()}
+        {formatRelativeTime(req.createdAt)}
       </p>
       {req.status === 'PENDING' && (
         <div className="flex gap-2">
-          <Button size="sm" variant="default" onClick={() => onAction(req.id, 'APPROVED')}>
+          <Button size="sm" onClick={() => onAction(req.id, 'APPROVED')}>
             Approve
           </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={() => onAction(req.id, 'REJECTED')}
-          >
+          <Button size="sm" variant="destructive" onClick={() => onAction(req.id, 'REJECTED')}>
             Reject
           </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Photo gallery with thumbnail strip; falls back to the species icon if a photo fails to load. */
+function Gallery({
+  images,
+  title,
+  species,
+}: {
+  images: PetImageResponse[]
+  title: string
+  species: string
+}) {
+  const [mainIdx, setMainIdx] = useState(0)
+  const [mainBroken, setMainBroken] = useState(false)
+  const { Icon } = speciesMeta(species)
+  const main = images[Math.min(mainIdx, Math.max(0, images.length - 1))]
+
+  const placeholder = (
+    <div className="flex h-full items-center justify-center bg-gradient-to-br from-amber-100 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/25">
+      <Icon className="h-24 w-24 text-amber-500/50 dark:text-amber-400/40" strokeWidth={1} />
+    </div>
+  )
+
+  return (
+    <div className="space-y-3">
+      <div className="aspect-[4/3] w-full overflow-hidden rounded-2xl border bg-muted">
+        {main && !mainBroken ? (
+          <img
+            key={main.id}
+            src={main.url}
+            alt={title}
+            onError={() => setMainBroken(true)}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          placeholder
+        )}
+      </div>
+      {images.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {images.map((img, idx) => (
+            <button
+              key={img.id}
+              onClick={() => setMainIdx(idx)}
+              aria-label={`Show photo ${idx + 1}`}
+              className={`h-16 w-16 shrink-0 overflow-hidden rounded-lg border-2 transition-all ${
+                idx === mainIdx
+                  ? 'border-primary shadow-sm'
+                  : 'border-transparent opacity-70 hover:opacity-100'
+              }`}
+            >
+              <img src={img.url} alt="" className="h-full w-full object-cover" />
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -93,8 +137,8 @@ export function PetDetailPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const queryClient = useQueryClient()
-  const [mainImageIdx, setMainImageIdx] = useState(0)
-  const [dialogOpen, setDialogOpen] = useState(false)
+  const [adoptDialogOpen, setAdoptDialogOpen] = useState(false)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [message, setMessage] = useState('')
   const [showRequests, setShowRequests] = useState(false)
 
@@ -106,7 +150,7 @@ export function PetDetailPage() {
 
   const isOwner = !!user && !!pet && user.id === pet.sellerId
 
-  // Fetch the current user's own requests (to detect existing PENDING/APPROVED)
+  // Fetch the current user's own requests (to detect an existing PENDING/APPROVED one)
   const { data: myRequests } = useQuery({
     queryKey: ['myAdoptionRequests'],
     queryFn: getMyRequests,
@@ -124,9 +168,11 @@ export function PetDetailPage() {
     mutationFn: () => deletePet(id!),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pets'] })
+      toast({ title: 'Listing deleted' })
       navigate('/dashboard')
     },
     onError: () => {
+      setConfirmDeleteOpen(false)
       toast({
         title: 'Delete failed',
         description: 'Could not delete this listing.',
@@ -139,13 +185,12 @@ export function PetDetailPage() {
     mutationFn: () => createAdoptionRequest(id!, message.trim() || undefined),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myAdoptionRequests'] })
-      setDialogOpen(false)
+      setAdoptDialogOpen(false)
       setMessage('')
       toast({ title: 'Request sent!', description: 'The seller will review your request.' })
     },
     onError: (err: unknown) => {
-      const detail =
-        err instanceof Error ? err.message : 'Could not send your adoption request.'
+      const detail = err instanceof Error ? err.message : 'Could not send your adoption request.'
       toast({ title: 'Request failed', description: detail, variant: 'destructive' })
     },
   })
@@ -162,20 +207,35 @@ export function PetDetailPage() {
     },
   })
 
-  if (isLoading) {
+  if (!id || isError || !pet) {
+    return (
+      <div className="py-16 text-center">
+        <PawPrint className="mx-auto mb-4 h-14 w-14 text-primary/40" strokeWidth={1.25} />
+        <p className="font-bold">Listing not found</p>
+        <p className="mb-4 text-sm text-muted-foreground">
+          This listing doesn't exist or was removed.
+        </p>
+        <Button asChild variant="outline">
+          <Link to="/pets">Back to browse</Link>
+        </Button>
+      </div>
+    )
+  }
+
+  if (isLoading || !pet) {
     return (
       <div className="grid gap-8 lg:grid-cols-2">
         <div className="space-y-3">
-          <Skeleton className="aspect-[4/3] w-full rounded-xl" />
+          <Skeleton className="aspect-[4/3] w-full rounded-2xl" />
           <div className="flex gap-2">
             {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 w-16 rounded-md" />
+              <Skeleton key={i} className="h-16 w-16 rounded-lg" />
             ))}
           </div>
         </div>
         <div className="space-y-4">
           <Skeleton className="h-8 w-2/3" />
-          <Skeleton className="h-6 w-1/3" />
+          <Skeleton className="h-10 w-1/3" />
           <Skeleton className="h-4 w-1/2" />
           <Skeleton className="h-4 w-1/4" />
           <Skeleton className="h-24 w-full" />
@@ -184,184 +244,168 @@ export function PetDetailPage() {
     )
   }
 
-  if (isError || !pet) {
-    return (
-      <div className="text-center py-16">
-        <p className="text-4xl mb-3">🐾</p>
-        <p className="text-lg font-medium">Listing not found</p>
-        <Button variant="link" onClick={() => navigate('/pets')}>
-          Back to Browse
-        </Button>
-      </div>
-    )
-  }
-
-  const mainImage = pet.images[mainImageIdx]
+  const { Icon: SpeciesIcon } = speciesMeta(pet.species)
 
   // Find if the current user already has a PENDING or APPROVED request for this pet
   const existingRequest = myRequests?.find(
     (r) => r.petId === pet.id && (r.status === 'PENDING' || r.status === 'APPROVED'),
   )
 
-  function handleDelete() {
-    if (window.confirm('Delete this listing? This cannot be undone.')) {
-      deleteMutation.mutate()
-    }
-  }
-
   return (
-    <div className="grid gap-8 lg:grid-cols-2">
-      {/* Image gallery */}
-      <div className="space-y-3">
-        <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-muted">
-          {mainImage ? (
-            <img src={mainImage.url} alt={pet.title} className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full items-center justify-center text-6xl">
-              {SPECIES_ICON[pet.species] ?? '🐾'}
+    <div className="space-y-4">
+      <Link
+        to="/pets"
+        className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground"
+      >
+        ← Back to browse
+      </Link>
+
+      <div className="grid gap-8 lg:grid-cols-2">
+        <Gallery key={pet.id} images={pet.images} title={pet.title} species={pet.species} />
+
+        {/* Details */}
+        <div className="space-y-5">
+          <div className="space-y-1.5">
+            <h1 className="text-3xl font-extrabold leading-tight tracking-tight">{pet.title}</h1>
+            <p className="text-3xl font-extrabold text-primary">{formatPrice(pet.price)}</p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary" className="gap-1 px-2.5 py-1 font-semibold">
+              <SpeciesIcon className="h-3.5 w-3.5" /> {speciesMeta(pet.species).label}
+            </Badge>
+            {pet.breed && <Badge variant="outline">{pet.breed}</Badge>}
+            {formatSex(pet.sex) && <Badge variant="outline">{formatSex(pet.sex)}</Badge>}
+            <Badge variant="outline">{formatAge(pet.ageMonths)}</Badge>
+          </div>
+
+          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <MapPin className="h-4 w-4 text-primary" />
+            {pet.city}, {pet.province}
+          </p>
+
+          {pet.description && (
+            <div className="rounded-xl border bg-card p-4">
+              <p className="mb-1.5 text-sm font-bold">About</p>
+              <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
+                {pet.description}
+              </p>
+            </div>
+          )}
+
+          <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-secondary">
+              <SpeciesIcon className="h-5 w-5 text-primary" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-bold">Listed on Pawzaar</p>
+              <p className="text-xs text-muted-foreground">
+                Posted {formatRelativeTime(pet.createdAt)} · Updated {formatRelativeTime(pet.updatedAt)}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2.5">
+            {isOwner ? (
+              <>
+                <Button onClick={() => navigate(`/pets/${pet.id}/edit`)}>
+                  <Pencil className="h-4 w-4" />
+                  Edit listing
+                </Button>
+                <Button variant="destructive" onClick={() => setConfirmDeleteOpen(true)}>
+                  <Trash2 className="h-4 w-4" />
+                  Delete listing
+                </Button>
+              </>
+            ) : existingRequest ? (
+              <Badge
+                variant={ADOPTION_STATUS_VARIANT[existingRequest.status]}
+                className="px-3 py-1.5 text-sm"
+              >
+                Your adoption request: {existingRequest.status.toLowerCase()}
+              </Badge>
+            ) : user ? (
+              <Dialog open={adoptDialogOpen} onOpenChange={setAdoptDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Heart className="h-4 w-4" />
+                    Request to adopt
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Request to adopt {pet.title}</DialogTitle>
+                    <DialogDescription>
+                      Introduce yourself to the seller — you can leave a message or just send the
+                      request.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <Textarea
+                    placeholder="Optional message to the seller…"
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    maxLength={1000}
+                    rows={4}
+                  />
+                  <DialogFooter>
+                    <Button onClick={() => adoptMutation.mutate()} disabled={adoptMutation.isPending}>
+                      {adoptMutation.isPending
+                        ? 'Sending…'
+                        : (
+                          <>
+                            <NotebookPen className="h-4 w-4" /> Send request
+                          </>
+                        )}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            ) : (
+              <Button onClick={() => navigate('/login')}>
+                <Heart className="h-4 w-4" />
+                Log in to adopt
+              </Button>
+            )}
+          </div>
+
+          {/* Owner: collapsible adoption requests section */}
+          {isOwner && (
+            <div className="space-y-2">
+              <Button variant="outline" size="sm" onClick={() => setShowRequests((v) => !v)}>
+                {showRequests ? 'Hide' : 'Show'} adoption requests
+              </Button>
+              {showRequests && (
+                <div className="space-y-2">
+                  {!petRequests ? (
+                    <p className="text-sm text-muted-foreground">Loading requests…</p>
+                  ) : petRequests.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No adoption requests yet.</p>
+                  ) : (
+                    petRequests.map((req) => (
+                      <AdoptionRequestCard
+                        key={req.id}
+                        req={req}
+                        onAction={(reqId, status) => updateStatusMutation.mutate({ reqId, status })}
+                      />
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
-        {pet.images.length > 1 && (
-          <div className="flex gap-2">
-            {pet.images.map((img, idx) => (
-              <button
-                key={img.id}
-                onClick={() => setMainImageIdx(idx)}
-                className={`h-16 w-16 overflow-hidden rounded-md border-2 transition-colors ${
-                  idx === mainImageIdx ? 'border-primary' : 'border-transparent'
-                }`}
-              >
-                <img src={img.url} alt="" className="h-full w-full object-cover" />
-              </button>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* Details */}
-      <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-bold">{pet.title}</h1>
-          <p className="text-3xl font-bold text-primary mt-1">{formatPrice(pet.price)}</p>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="secondary">
-            {SPECIES_ICON[pet.species]} {pet.species}
-          </Badge>
-          {pet.breed && <Badge variant="outline">{pet.breed}</Badge>}
-          {pet.sex && <Badge variant="outline">{pet.sex}</Badge>}
-          <Badge variant="outline">{formatAge(pet.ageMonths)}</Badge>
-        </div>
-
-        <p className="text-muted-foreground">📍 {pet.city}, {pet.province}</p>
-
-        {pet.description && (
-          <div>
-            <p className="font-medium mb-1">About</p>
-            <p className="text-sm text-muted-foreground whitespace-pre-line">
-              {pet.description}
-            </p>
-          </div>
-        )}
-
-        <div className="rounded-lg border p-4">
-          <p className="text-sm font-medium text-muted-foreground">Seller</p>
-          <Link
-            to={`/sellers/${pet.sellerId}`}
-            className="text-sm text-primary hover:underline"
-          >
-            View seller profile
-          </Link>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
-          {isOwner ? (
-            <>
-              <Button onClick={() => navigate(`/pets/${pet.id}/edit`)}>Edit Listing</Button>
-              <Button
-                variant="destructive"
-                onClick={handleDelete}
-                disabled={deleteMutation.isPending}
-              >
-                {deleteMutation.isPending ? 'Deleting…' : 'Delete Listing'}
-              </Button>
-            </>
-          ) : existingRequest ? (
-            <Badge variant={ADOPTION_STATUS_VARIANT[existingRequest.status]} className="px-3 py-1.5 text-sm">
-              Adoption request: {existingRequest.status}
-            </Badge>
-          ) : user ? (
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>Request to Adopt</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Request to Adopt {pet.title}</DialogTitle>
-                  <DialogDescription>
-                    Introduce yourself to the seller. You can leave a message or just click
-                    Send.
-                  </DialogDescription>
-                </DialogHeader>
-                <Textarea
-                  placeholder="Optional message to the seller…"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  maxLength={1000}
-                  rows={4}
-                />
-                <DialogFooter>
-                  <Button
-                    onClick={() => adoptMutation.mutate()}
-                    disabled={adoptMutation.isPending}
-                  >
-                    {adoptMutation.isPending ? 'Sending…' : 'Send Request'}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          ) : (
-            <Button onClick={() => navigate('/login')}>Log in to Adopt</Button>
-          )}
-          <Button variant="outline" onClick={() => navigate('/pets')}>
-            Back to Browse
-          </Button>
-        </div>
-
-        {/* Owner: collapsible adoption requests section */}
-        {isOwner && (
-          <div className="space-y-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowRequests((v) => !v)}
-            >
-              {showRequests ? 'Hide' : 'Show'} Adoption Requests
-            </Button>
-            {showRequests && (
-              <div className="space-y-2">
-                {!petRequests ? (
-                  <p className="text-sm text-muted-foreground">Loading…</p>
-                ) : petRequests.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No adoption requests yet.</p>
-                ) : (
-                  petRequests.map((req) => (
-                    <AdoptionRequestCard
-                      key={req.id}
-                      req={req}
-                      onAction={(reqId, status) =>
-                        updateStatusMutation.mutate({ reqId, status })
-                      }
-                    />
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title="Delete this listing?"
+        description="The listing and its photos will be permanently removed. This cannot be undone."
+        confirmLabel="Delete listing"
+        destructive
+        pending={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate()}
+      />
     </div>
   )
 }
