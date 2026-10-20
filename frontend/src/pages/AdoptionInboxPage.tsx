@@ -164,8 +164,8 @@ export function AdoptionInboxPage() {
           {sentLoading ? (
             <SkeletonCards />
           ) : !sent || sent.length === 0 ? (
-            <div className="py-10 text-center text-muted-foreground">
-              <PawPrint className="mx-auto mb-3 h-10 w-10 text-primary/50" strokeWidth={1.25} />
+            <div className="flex min-h-[45vh] flex-col items-center justify-center text-center text-muted-foreground">
+              <PawPrint className="mb-3 h-10 w-10 text-primary/50" strokeWidth={1.25} />
               <p>You haven't sent any adoption requests yet.</p>
               <Button asChild variant="link" className="mt-2">
                 <Link to="/pets">Browse pets</Link>
@@ -188,8 +188,8 @@ export function AdoptionInboxPage() {
           {receivedLoading ? (
             <SkeletonCards />
           ) : !received || received.length === 0 ? (
-            <div className="py-10 text-center text-muted-foreground">
-              <Inbox className="mx-auto mb-3 h-10 w-10 text-primary/50" strokeWidth={1.25} />
+            <div className="flex min-h-[45vh] flex-col items-center justify-center text-center text-muted-foreground">
+              <Inbox className="mb-3 h-10 w-10 text-primary/50" strokeWidth={1.25} />
               <p>No adoption requests received yet.</p>
             </div>
           ) : (
