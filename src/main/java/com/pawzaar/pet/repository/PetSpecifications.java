@@ -3,6 +3,8 @@ package com.pawzaar.pet.repository;
 import com.pawzaar.pet.Pet;
 import com.pawzaar.pet.PetStatus;
 import com.pawzaar.pet.dto.PetFilter;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.jpa.domain.Specification;
 
@@ -19,7 +21,9 @@ import java.util.Locale;
  */
 public final class PetSpecifications {
 
-    /** Escape character for LIKE: {@code \} in the SQL, chosen because it is rarely in a breed name. */
+    /**
+     * Escape character for LIKE: {@code \} in the SQL, chosen because it is rarely in a place or breed name.
+     */
     private static final char LIKE_ESCAPE = '\\';
 
     private PetSpecifications() {
@@ -47,19 +51,15 @@ public final class PetSpecifications {
                 predicates.add(cb.equal(root.get("species"), filter.species()));
             }
             if (filter.province() != null) {
-                // M3: case-insensitive - "metro manila" and "Metro Manila" are the same place.
-                predicates.add(cb.equal(cb.lower(root.get("province")),
-                        filter.province().toLowerCase(Locale.ROOT)));
+                // Case-insensitive contains: "metro" matches "Metro Manila". M3: the user's % and
+                // _ are escaped so they match literally instead of acting as wildcards.
+                predicates.add(contains(cb, cb.lower(root.get("province")), filter.province()));
             }
             if (filter.city() != null) {
-                predicates.add(cb.equal(cb.lower(root.get("city")),
-                        filter.city().toLowerCase(Locale.ROOT)));
+                predicates.add(contains(cb, cb.lower(root.get("city")), filter.city()));
             }
             if (filter.breed() != null) {
-                // Case-insensitive "contains": lower(breed) LIKE %term%. M3: the user's % and _ are
-                // escaped so they match literally instead of acting as wildcards.
-                String pattern = "%" + escapeLike(filter.breed().toLowerCase(Locale.ROOT)) + "%";
-                predicates.add(cb.like(cb.lower(root.get("breed")), pattern, LIKE_ESCAPE));
+                predicates.add(contains(cb, cb.lower(root.get("breed")), filter.breed()));
             }
             if (filter.minPrice() != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("price"), filter.minPrice()));
@@ -80,8 +80,17 @@ public final class PetSpecifications {
     }
 
     /**
+     * Case-insensitive contains for a text filter: lower(column) LIKE %term%. Used by
+     * province, city and breed, so a fragment like "quezon" still finds "Quezon City".
+     */
+    private static Predicate contains(CriteriaBuilder cb, Expression<String> column, String term) {
+        String pattern = "%" + escapeLike(term.toLowerCase(Locale.ROOT)) + "%";
+        return cb.like(column, pattern, LIKE_ESCAPE);
+    }
+
+    /**
      * Escapes the LIKE metacharacters so a search term is matched literally (M3). Without this a
-     * client typing {@code %} would match every breed - a wildcard they never asked for, and a cheap
+     * client typing {@code %} would match every row - a wildcard they never asked for, and a cheap
      * way to scan the whole table. Backslash must be escaped first, or it would double-escape the
      * escapes we add next.
      */

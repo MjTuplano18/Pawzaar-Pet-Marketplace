@@ -187,17 +187,32 @@ class PetRepositoryTest {
         pet(seller, "Shih Tzu, 1 year old", Species.DOG, "Shih Tzu",
                 12, 9000, "Quezon City", "Metro Manila");
 
-        // Province filter.
+        // Province contains: fragments and full names both work.
         Page<Pet> inBulacan = search(new PetFilter(
                 null, "Bulacan", null, null, null, null, null, null));
         assertEquals(1, inBulacan.getTotalElements());
         assertEquals("Friendly Golden Retriever puppy", inBulacan.getContent().get(0).getTitle());
 
-        // City-only filter.
+        Page<Pet> inBulacanFragment = search(new PetFilter(
+                null, "bula", null, null, null, null, null, null));
+        assertEquals(1, inBulacanFragment.getTotalElements());
+        assertEquals("Friendly Golden Retriever puppy", inBulacanFragment.getContent().get(0).getTitle());
+
+        // City contains: "quezon" must find "Quezon City" without typing the full name.
         Page<Pet> inQuezonCity = search(new PetFilter(
                 null, null, "Quezon City", null, null, null, null, null));
         assertEquals(1, inQuezonCity.getTotalElements());
         assertEquals("Shih Tzu, 1 year old", inQuezonCity.getContent().get(0).getTitle());
+
+        Page<Pet> inQuezonFragment = search(new PetFilter(
+                null, null, "quezon", null, null, null, null, null));
+        assertEquals(1, inQuezonFragment.getTotalElements());
+        assertEquals("Shih Tzu, 1 year old", inQuezonFragment.getContent().get(0).getTitle());
+
+        // No false positives: an unrelated fragment matches nothing.
+        Page<Pet> noMatch = search(new PetFilter(
+                null, null, "zamboanga", null, null, null, null, null));
+        assertEquals(0, noMatch.getTotalElements());
     }
 
     @Test
@@ -221,12 +236,12 @@ class PetRepositoryTest {
         pet(seller, "Shih", Species.DOG, "Shih Tzu", 12, 9000, "Cebu City", "Cebu");
 
         Page<Pet> byProvince = search(new PetFilter(
-                null, "metro manila", null, null, null, null, null, null));
+                null, "METRO MANILA", null, null, null, null, null, null));
         assertEquals(1, byProvince.getTotalElements());
         assertEquals("Golden Retriever", byProvince.getContent().get(0).getBreed());
 
         Page<Pet> byCity = search(new PetFilter(
-                null, null, "CEBU CITY", null, null, null, null, null));
+                null, null, "cebu city", null, null, null, null, null));
         assertEquals(1, byCity.getTotalElements());
         assertEquals("Shih Tzu", byCity.getContent().get(0).getBreed());
     }
