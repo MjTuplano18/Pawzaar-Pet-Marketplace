@@ -241,6 +241,10 @@ export function BrowsePage() {
           : 'age_asc'
 
   const totalResults = data?.totalElements
+  const priceFilterConflict =
+    minPriceParam !== '' &&
+    maxPriceParam !== '' &&
+    Number(minPriceParam) > Number(maxPriceParam)
 
   return (
     <div className="space-y-5">
@@ -296,6 +300,12 @@ export function BrowsePage() {
             </SelectContent>
           </Select>
         </div>
+        {priceFilterConflict && (
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-destructive">
+            <TriangleAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+            Minimum price is higher than the maximum price.
+          </p>
+        )}
       </div>
 
       {/* Grid */}

@@ -28,7 +28,15 @@ function MyPetCard({ pet, onDelete }: { pet: PetSummary; onDelete: (id: string) 
     <Card className="overflow-hidden">
       <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
         {pet.coverImageUrl ? (
-          <img src={pet.coverImageUrl} alt={pet.title} className="h-full w-full object-cover" />
+          <img
+            src={pet.coverImageUrl}
+            alt={pet.title}
+            className={
+              pet.status === 'SOLD'
+                ? 'h-full w-full object-cover grayscale opacity-75'
+                : 'h-full w-full object-cover'
+            }
+          />
         ) : (
           <div className="flex h-full items-center justify-center bg-gradient-to-br from-amber-100 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/25">
             <SpeciesIcon className="h-12 w-12 text-amber-500/60 dark:text-amber-400/50" strokeWidth={1.25} />

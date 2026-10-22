@@ -91,4 +91,16 @@ describe('BrowsePage filters', () => {
 
     await waitFor(() => expect(listPets).toHaveBeenLastCalledWith(expect.not.objectContaining({ city: expect.anything() })))
   })
+
+  it('warns when the minimum price is above the maximum', async () => {
+    const first = renderBrowse('/browse?minPrice=500&maxPrice=100')
+
+    expect(await screen.findByText('Minimum price is higher than the maximum price.')).toBeInTheDocument()
+    first.unmount()
+
+    // A sane range shows no warning
+    renderBrowse('/browse?minPrice=100&maxPrice=500')
+    await screen.findByText('Golden retriever puppy')
+    expect(screen.queryByText('Minimum price is higher than the maximum price.')).not.toBeInTheDocument()
+  })
 })
