@@ -121,8 +121,11 @@ function useUrlFilterInput(param: string, updateParams: UpdateParamsFn) {
 
   const debounced = useDebounced(text)
   useEffect(() => {
-    if (debounced !== current) updateParams({ [param]: debounced })
-  }, [debounced, current, param, updateParams])
+    // Push only once the debounce has caught up with what the user typed. A debounced
+    // value older than the URL (e.g. a stale city right after "Clear filters") must not
+    // overwrite the URL the user just changed.
+    if (debounced !== current && debounced === text) updateParams({ [param]: debounced })
+  }, [debounced, current, text, param, updateParams])
 
   return [text, setText] as const
 }
